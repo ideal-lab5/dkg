@@ -1,102 +1,132 @@
-use threshold_crypto::{
-    G1Affine, Fr, IntoFr,
-    group::CurveAffine,
-    ff::Field,
-    poly::{BivarPoly, Poly},
+
+use std::{
+    collections::HashMap,
+    time::{Duration, SystemTime},
+};
+use ark_ff::{Field, PrimeField};
+use ark_std::{test_rng, One, UniformRand, Zero, rand::RngCore};
+use ark_test_curves::{bls12_381::{Fq as F, G1_GENERATOR_X}};
+use ark_poly::{
+    polynomial::univariate::DensePolynomial,
+    DenseUVPolynomial, Polynomial,
 };
 
-use std::collections::BTreeMap;
-
 fn main() {
-    distributed_key_generation(5, 3, 2);
+    distributed_key_generation(10, 6);
 }
 
 // based on: https://github.com/poanetwork/threshold_crypto/blob/d81953b55d181311c2a4eed2b6c34059fcf3fdae/src/poly.rs#L967
-fn distributed_key_generation(num_shares: usize, threshold: i32, tolerance: usize) {
-    let mut rng = rand::thread_rng();
-    println!("Starting DKG with {:?} dealers", threshold);
- 
-    // For distributed key generation, a number of dealers, only one of who needs to be honest,
-    // generates random bivariate polynomials and publicly commits to them. In practice, the
-    // dealers can e.g. be any `tolerance + 1` nodes.
-    let bi_polys: Vec<BivarPoly> = (0..threshold)
-        .map(|_| {
-            BivarPoly::random(tolerance, &mut rng)
-        })
-        .collect();
-    // create a commitment to the polynomial
-    let pub_bi_commits: Vec<_> = bi_polys.iter().map(BivarPoly::commitment).collect();
-    // create empty vec to hold secret keys
-    let mut sec_keys = vec![Fr::zero(); num_shares];
+fn distributed_key_generation(s: i32, t: usize) {
+    // let mut rng = rand::thread_rng();
+    let now = SystemTime::now();
+    println!("Starting DKG with {:?} shares and {:?} threshold", s, t);
+    let mut rng = test_rng();
+    // get prime modulus associated with `F`
+    let modulus = <F as PrimeField>::MODULUS;
+    println!("The order of the field is {:?}", modulus);
+    let g = G1_GENERATOR_X;
+    // technically a generator 
+    // let g = F::one();
 
-    // Each dealer sends row `m` to node `m`, where the index starts at `1`. Don't send row `0`
-    // to anyone! The nodes verify their rows, and send _value_ `s` on to node `s`. They again
-    // verify the values they received, and collect them.
-    for (bi_poly, bi_commit) in bi_polys.iter().zip(&pub_bi_commits) {
-        for m in 1..=num_shares {
-            // Node `m` receives its row and verifies it.
-            let row_poly = bi_poly.row(m);
-            let row_commit = bi_commit.row(m);
-            assert_eq!(row_poly.commitment(), row_commit);
-            // Node `s` receives the `s`-th value and verifies it.
-            for s in 1..=num_shares {
-                let val = row_poly.evaluate(s);
-                let val_g1 = G1Affine::one().mul(val);
-                assert_eq!(bi_commit.evaluate(m, s), val_g1);
-                // The node can't verify this directly, but it should have the correct value:
-                assert_eq!(bi_poly.evaluate(m, s), val);                                                       
+    let mut dealer_secrets = HashMap::<i32, F>::new();
+    let mut dealer_commitments = HashMap::<i32, DensePolynomial<F>>::new();
+    // 1. The sharing phase: each dealer generates a random polynomial
+    //    Then, each dealer generates shares for each of the other dealers
+    //    and generates a commitment to the polynomial
+    // 
+    for i in 1..s  {
+        let mut dealer_shares = HashMap::<i32, F>::new();
+        // TODO: randomly sample t coefficients from F, with first elt as secret
+        let rand_poly = DensePolynomial::<F>::rand(t, &mut rng);
+        // generate a commitment to the polynomial
+        let commitment = generate_poly_commitment(g, rand_poly.clone());
+        // first coefficient is the secret
+        let secret = rand_poly.coeffs()[0];
+        dealer_secrets.insert(i, secret);
+        dealer_commitments.insert(i, commitment);
+        for j in 1..s {
+            // evaluate the polynomial at each index except your own
+            if j != i {
+                // the secret share $s_{i \to j}$
+                let share = rand_poly.evaluate(&F::from(j as i32));
+                dealer_shares.insert(j as i32, share);
             }
+        }    
+    }
+    // Now we will just imagine this is where the shares would be encrypted and transmitted through some network
+    // beep boop ....
 
-            // A cheating dealer who modified the polynomial would be detected.
-            let x_pow_2 =
-                Poly::monomial(2);
-            let five = Poly::constant(5i32.into_fr());
-            let wrong_poly = row_poly.clone() + x_pow_2 * five;
-            assert_ne!(wrong_poly.commitment(), row_commit);
+    // 2. The Disputes phase
+    // For now, I'm skiipping this because I know all of the share are valid
+    // commitments are verified here, so that's where the dealer_commitments and dealer_shares map are used
 
-            // If `2 * tolerance + 1` nodes confirm that they received a valid row, then at
-            // least `tolerance + 1` honest ones did, and sent the correct values on to node
-            // `s`. So every node received at least `tolerance + 1` correct entries of their
-            // column/row (remember that the bivariate polynomial is symmetric). They can
-            // reconstruct the full row and in particular value `0` (which no other node knows,
-            // only the dealer). E.g. let's say nodes `1`, `2` and `4` are honest. Then node
-            // `m` received three correct entries from that row:
-            let received: BTreeMap<_, _> = [1, 2, 4]
-                .iter()
-                .map(|&i| (i, bi_poly.evaluate(m, i)))
-                .collect();
-            let my_row =
-                Poly::interpolate(received);
-            assert_eq!(bi_poly.evaluate(m, 0), my_row.evaluate(0));
-            assert_eq!(row_poly, my_row);
-
-            // The node sums up all values number `0` it received from the different dealer. No
-            // dealer and no other node knows the sum in the end.
-            sec_keys[m - 1].add_assign(&my_row.evaluate(Fr::zero()));
+    // 3. Derive a master public key
+    // for now, I'll just try doing this with the first t+1 shares
+    // and use the same group generator that I used above
+    // to derive this we take the sum of the generator raised to each dealer's secret 
+    let pubkey_shares = dealer_secrets.iter().map(|(_, secret)| {
+        generate_pubkey_share(g, *secret)
+    }).collect::<Vec<_>>();
+    let pubkey = generate_pubkey(pubkey_shares.as_slice());
+    println!("Generated master public key: {:?}", pubkey);
+    
+    match now.elapsed() {
+        Ok(elapsed) => {
+            // it prints '2'
+            println!("DKG Complete: time elapsed: {} ms", elapsed.as_millis());
+        }
+        Err(e) => {
+            // an error occurred!
+            println!("Error: {e:?}");
         }
     }
 
-    // Each node now adds up all the first values of the rows it received from the different
-    // dealers (excluding the dealers where fewer than `2 * tolerance + 1` nodes confirmed).
-    // The whole first column never gets added up in practice, because nobody has all the
-    // information. We do it anyway here; entry `0` is the secret key that is not known to
-    // anyone, neither a dealer, nor a node:
-    let mut sec_key_set = Poly::zero();
-    for bi_poly in &bi_polys {
-        sec_key_set += bi_poly
-            .row(0);
-    }
-    for m in 1..=num_shares {
-        assert_eq!(sec_key_set.evaluate(m), sec_keys[m - 1]);
-    }
+}
 
-    // The sum of the first rows of the public commitments is the commitment to the secret key
-    // set.
-    let mut sum_commit = Poly::zero()
-        .commitment();
-    for bi_commit in &pub_bi_commits {
-        sum_commit += bi_commit.row(0);
-    }
-    assert_eq!(sum_commit, sec_key_set.commitment());
-    println!("DKG Complete!");
+// // a^{p-1} != 1 => a is a generator for the group G.
+// // is this actually true? I need to verify and prove this...
+// fn find_generator(identity: F, modulus: F, rng: &mut RngCore) -> F {
+//     let mut a = F::rand(rng);
+//     if pow(a, modulus - F::one()) != identity {
+//         a
+//     } 
+//     find_generator(identity, modulus, rng)
+// }
+
+// each coefficient's commitment is $g^{coefficient}$
+// so then, I can just do the product of those, generate coefficients 
+// for the new polynomial
+//
+// i.e. I'm taking $f(x) = c_0 + c_1 * x + ... + c_t x^t$
+// then commiting to them and defining new coefficients for the public verification key
+// $[g^{c_0}, g^{c_1}, ..., g^{c_n}]$
+//
+fn generate_poly_commitment(g: F, poly: DensePolynomial<F>) -> DensePolynomial<F> {
+    let commitments = poly.coeffs().iter().map(|c: &F| {
+        // convert the coefficient c to it's u64 representation, least significant bit first
+        let big_c: num_bigint::BigUint = c.to_owned().into();
+        let big_c_digits = big_c.to_u64_digits();
+        g.pow(big_c_digits)
+    }).collect::<Vec<_>>();
+    DensePolynomial::<F>::from_coefficients_vec(commitments)
+}
+
+fn generate_pubkey(pubkey_shares: &[F]) -> F {
+    let mut pubkey = pubkey_shares[0];
+
+    pubkey_shares[1..].iter().for_each(|share| {
+        pubkey = pow(pubkey, *share);
+    });
+
+    pubkey
+}
+
+fn generate_pubkey_share(h: F, share: F) -> F {
+    pow(h, share)
+}
+
+fn pow(f: F, g: F) -> F {
+    let big_g: num_bigint::BigUint = g.to_owned().into();
+    let big_g_digits = big_g.to_u64_digits();
+    f.pow(big_g_digits)
 }

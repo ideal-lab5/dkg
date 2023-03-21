@@ -9,9 +9,16 @@ keywords = ["pairing", "threshold"]
 license = "GPL-3.0"
 readme = "README.md"
 repository = "https://github.com/driemworks/dkg"
-description = "Basic DKG example using the threshold_crypto library."
+description = "DKG PoC using arkworks."
 edition = "2018"
 
 [dependencies]
-rand = "0.7.3" 
-threshold_crypto = { git = "https://github.com/driemworks/threshold_crypto.git", branch = "master" }
+rand = "0.7.3"
+byteorder = "1.4.3"
+num-bigint = "0.4.3"
+
+# arkworks dependencies
+ark-std = { git = "https://github.com/arkworks-rs/std.git" }
+ark-ff = { git = "https://github.com/arkworks-rs/algebra.git" }
+ark-poly = { git = "https://github.com/arkworks-rs/algebra.git" }
+ark-test-curves = { git = "https://github.com/arkworks-rs/algebra.git", default-features = false, features = [ "bls12_381_curve", "mnt6_753", "secp256k1"] }
