@@ -1,6 +1,6 @@
 # Distributed Key Generation
 
-This is a distributed key generation mechanism using the poanetwork/threshold_crypto library.
+This is a distributed key generation mechanism using the arkworks library.
 
 ## Overview
 
