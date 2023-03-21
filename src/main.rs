@@ -57,7 +57,7 @@ fn distributed_key_generation(s: i32, t: usize) {
     // beep boop ....
 
     // 2. The Disputes phase
-    // For now, I'm skiipping this because I know all of the share are valid
+    // For now, I'm skipping this because I know all of the share are valid
     // commitments are verified here, so that's where the dealer_commitments and dealer_shares map are used
 
     // 3. Derive a master public key
@@ -72,26 +72,16 @@ fn distributed_key_generation(s: i32, t: usize) {
     
     match now.elapsed() {
         Ok(elapsed) => {
-            // it prints '2'
             println!("DKG Complete: time elapsed: {} ms", elapsed.as_millis());
         }
         Err(e) => {
-            // an error occurred!
             println!("Error: {e:?}");
         }
     }
 
-}
 
-// // a^{p-1} != 1 => a is a generator for the group G.
-// // is this actually true? I need to verify and prove this...
-// fn find_generator(identity: F, modulus: F, rng: &mut RngCore) -> F {
-//     let mut a = F::rand(rng);
-//     if pow(a, modulus - F::one()) != identity {
-//         a
-//     } 
-//     find_generator(identity, modulus, rng)
-// }
+
+}
 
 // each coefficient's commitment is $g^{coefficient}$
 // so then, I can just do the product of those, generate coefficients 
@@ -111,20 +101,18 @@ fn generate_poly_commitment(g: F, poly: DensePolynomial<F>) -> DensePolynomial<F
     DensePolynomial::<F>::from_coefficients_vec(commitments)
 }
 
+/// Generate a public key from the pubkey shares
+/// The public key is simply the product of the shares
 fn generate_pubkey(pubkey_shares: &[F]) -> F {
-    let mut pubkey = pubkey_shares[0];
-
-    pubkey_shares[1..].iter().for_each(|share| {
-        pubkey = pow(pubkey, *share);
-    });
-
-    pubkey
+    pubkey_shares.iter().fold(F::one(),|a, &b| a * b)
 }
 
+/// generate a public key share $h^{share}$
 fn generate_pubkey_share(h: F, share: F) -> F {
     pow(h, share)
 }
 
+/// utility function to calculate $f^g$
 fn pow(f: F, g: F) -> F {
     let big_g: num_bigint::BigUint = g.to_owned().into();
     let big_g_digits = big_g.to_u64_digits();
