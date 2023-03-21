@@ -1,0 +1,17 @@
+[package]
+name = "dkg"
+version = "1.0.0"
+authors = [
+    "tony riemer <driemworks@idealabs.network>"
+]
+categories = ["cryptography"]
+keywords = ["pairing", "threshold"]
+license = "GPL-3.0"
+readme = "README.md"
+repository = "https://github.com/driemworks/dkg"
+description = "Basic DKG example using the threshold_crypto library."
+edition = "2018"
+
+[dependencies]
+rand = "0.7.3" 
+threshold_crypto = { git = "https://github.com/driemworks/threshold_crypto.git", branch = "master" }
