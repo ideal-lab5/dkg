@@ -13,3 +13,9 @@ build with
 ``` bash
 cargo build --release
 ```
+
+run the dkg example with
+
+``` bash
+cargo run
+```

@@ -21,4 +21,5 @@ num-bigint = "0.4.3"
 ark-std = { git = "https://github.com/arkworks-rs/std.git" }
 ark-ff = { git = "https://github.com/arkworks-rs/algebra.git" }
 ark-poly = { git = "https://github.com/arkworks-rs/algebra.git" }
+ark-ec = { git = "https://github.com/arkworks-rs/algebra.git" }
 ark-test-curves = { git = "https://github.com/arkworks-rs/algebra.git", default-features = false, features = [ "bls12_381_curve", "mnt6_753", "secp256k1"] }

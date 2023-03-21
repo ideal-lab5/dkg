@@ -1,74 +1,98 @@
 
 use std::{
     collections::HashMap,
-    time::{Duration, SystemTime},
+    time::SystemTime,
+    ops::Mul,
 };
-use ark_ff::{Field, PrimeField};
-use ark_std::{test_rng, One, UniformRand, Zero, rand::RngCore};
-use ark_test_curves::{bls12_381::{Fq as F, G1_GENERATOR_X}};
+use ark_ec::{Group};
+// We'll use the BLS12-381 G1 curve for this example.
+// This group has a prime order `r`, and is associated with a prime field `Fr`.
+use ark_test_curves::{
+    bls12_381::{
+        g2::Config, G2Projective as G, Fr as ScalarField
+    },
+    Field, short_weierstrass::Projective
+};
+use ark_std::test_rng;
 use ark_poly::{
     polynomial::univariate::DensePolynomial,
     DenseUVPolynomial, Polynomial,
 };
 
 fn main() {
-    distributed_key_generation(10, 6);
+    distributed_key_generation(3, 2);
+}
+#[derive(Clone)]
+pub struct PublicVerificationKey {
+    pub coefficients: Vec<Projective<Config>>,
 }
 
-// based on: https://github.com/poanetwork/threshold_crypto/blob/d81953b55d181311c2a4eed2b6c34059fcf3fdae/src/poly.rs#L967
+impl PublicVerificationKey {
+    /// evaluate the pkv at some point x
+    /// $f(x) = C_0 * C_1^{x^1} * ... * C_t^{x^t}$
+    pub fn evaluate(&self, x: ScalarField) -> Projective<Config> {
+        let mut result = self.coefficients[0];
+        for i in 1..self.coefficients.len() {
+            let big_i: num_bigint::BigUint = ScalarField::from(i as i32).into();
+            result = self.coefficients[i].mul(x.pow(big_i.to_u64_digits()));
+        }
+        result
+    }
+}
+
 fn distributed_key_generation(s: i32, t: usize) {
     // let mut rng = rand::thread_rng();
     let now = SystemTime::now();
     println!("Starting DKG with {:?} shares and {:?} threshold", s, t);
     let mut rng = test_rng();
-    // get prime modulus associated with `F`
-    let modulus = <F as PrimeField>::MODULUS;
-    println!("The order of the field is {:?}", modulus);
-    let g = G1_GENERATOR_X;
-    // technically a generator 
-    // let g = F::one();
-
-    let mut dealer_secrets = HashMap::<i32, F>::new();
-    let mut dealer_commitments = HashMap::<i32, DensePolynomial<F>>::new();
-    // 1. The sharing phase: each dealer generates a random polynomial
-    //    Then, each dealer generates shares for each of the other dealers
-    //    and generates a commitment to the polynomial
-    // 
-    for i in 1..s  {
-        let mut dealer_shares = HashMap::<i32, F>::new();
-        // TODO: randomly sample t coefficients from F, with first elt as secret
-        let rand_poly = DensePolynomial::<F>::rand(t, &mut rng);
-        // generate a commitment to the polynomial
-        let commitment = generate_poly_commitment(g, rand_poly.clone());
-        // first coefficient is the secret
-        let secret = rand_poly.coeffs()[0];
-        dealer_secrets.insert(i, secret);
-        dealer_commitments.insert(i, commitment);
+    
+    // we need to get a generator of the group G
+    let generator = G::generator();
+    let mut dealer_secret_poly: Vec<DensePolynomial<ScalarField>> = Vec::new();
+    let mut dealer_pvps: Vec<PublicVerificationKey> = Vec::new();
+    // this maps the share that dealers receive from other dealers
+    // i.e. if i makes a share for j, s_{i \to j}, then this is in the map as:
+    // j -> {i, s_{t \to j}}
+    let mut dealer_shares: HashMap<i32, (i32, ScalarField)> = HashMap::new();
+    // each dealer
+    for i in 0..s {
+        // generate t degree random poly over the scalar field
+        let rand_poly = DensePolynomial::<ScalarField>::rand(t, &mut rng);
+        let dealer_pvp = generate_poly_commitment(generator, rand_poly.clone());
+        dealer_secret_poly.push(rand_poly.clone());
+        dealer_pvps.push(dealer_pvp);
+        
         for j in 1..s {
-            // evaluate the polynomial at each index except your own
-            if j != i {
-                // the secret share $s_{i \to j}$
-                let share = rand_poly.evaluate(&F::from(j as i32));
-                dealer_shares.insert(j as i32, share);
-            }
-        }    
+            // create shares
+            let share_i_j = rand_poly.clone().evaluate(&ScalarField::from(j));
+            dealer_shares.insert(j, (i, share_i_j));
+        }
     }
-    // Now we will just imagine this is where the shares would be encrypted and transmitted through some network
-    // beep boop ....
+    
+    // println!("Created dealer secret polys: {:?}", dealer_secret_poly);
+    // println!("Created dealer secret shares: {:?}", dealer_shares);
+    // let f = dealer_pvps[0].clone();
+    // let evaluation = f.evaluate(ScalarField::from(1));
+    // println!("Evaluated the public verification poly: f({:?}) = {:?}", 1, evaluation);
 
-    // 2. The Disputes phase
-    // For now, I'm skipping this because I know all of the share are valid
-    // commitments are verified here, so that's where the dealer_commitments and dealer_shares map are used
+    let pubkey_shares: Vec<Projective<Config>> = dealer_secret_poly.iter().map(|f| {
+        let secret = f.coeffs()[0];
+        // for each share, calculate a public key
+        // this probably isn't right
+        let pubkey_share = generator.mul(secret); // but that's just scalar multiplication, not what I want
+        pubkey_share
+    }).collect();
+    println!("num secrets recovered: {:?}", pubkey_shares.len());
+    // now just multiply them all together
+    let mut mpk = pubkey_shares[0].clone();
+    // we'll just assume every share is valid
+    for i in 1..s {
+        let pk = pubkey_shares[i as usize];
+        // okay so I want to multiply them..not add..
+        mpk = pk + mpk;
+    }
 
-    // 3. Derive a master public key
-    // for now, I'll just try doing this with the first t+1 shares
-    // and use the same group generator that I used above
-    // to derive this we take the sum of the generator raised to each dealer's secret 
-    let pubkey_shares = dealer_secrets.iter().map(|(_, secret)| {
-        generate_pubkey_share(g, *secret)
-    }).collect::<Vec<_>>();
-    let pubkey = generate_pubkey(pubkey_shares.as_slice());
-    println!("Generated master public key: {:?}", pubkey);
+    println!("Calculated group mpk: {:?}", mpk);
     
     match now.elapsed() {
         Ok(elapsed) => {
@@ -91,30 +115,11 @@ fn distributed_key_generation(s: i32, t: usize) {
 // then commiting to them and defining new coefficients for the public verification key
 // $[g^{c_0}, g^{c_1}, ..., g^{c_n}]$
 //
-fn generate_poly_commitment(g: F, poly: DensePolynomial<F>) -> DensePolynomial<F> {
-    let commitments = poly.coeffs().iter().map(|c: &F| {
-        // convert the coefficient c to it's u64 representation, least significant bit first
-        let big_c: num_bigint::BigUint = c.to_owned().into();
-        let big_c_digits = big_c.to_u64_digits();
-        g.pow(big_c_digits)
+fn generate_poly_commitment(g: Projective<Config>, poly: DensePolynomial<ScalarField>) 
+    -> PublicVerificationKey {
+    let commitments: Vec<Projective<Config>> = poly.coeffs().iter().map(|c: &ScalarField| {
+        // commitment = g^c
+        g.mul(c)
     }).collect::<Vec<_>>();
-    DensePolynomial::<F>::from_coefficients_vec(commitments)
-}
-
-/// Generate a public key from the pubkey shares
-/// The public key is simply the product of the shares
-fn generate_pubkey(pubkey_shares: &[F]) -> F {
-    pubkey_shares.iter().fold(F::one(),|a, &b| a * b)
-}
-
-/// generate a public key share $h^{share}$
-fn generate_pubkey_share(h: F, share: F) -> F {
-    pow(h, share)
-}
-
-/// utility function to calculate $f^g$
-fn pow(f: F, g: F) -> F {
-    let big_g: num_bigint::BigUint = g.to_owned().into();
-    let big_g_digits = big_g.to_u64_digits();
-    f.pow(big_g_digits)
+    PublicVerificationKey { coefficients: commitments }
 }
