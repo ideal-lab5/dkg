@@ -16,6 +16,7 @@ edition = "2018"
 rand = "0.7.3"
 byteorder = "1.4.3"
 num-bigint = "0.4.3"
+rand_chacha = { version = "0.3.1", default-features = false }
 
 # arkworks dependencies
 ark-std = { git = "https://github.com/arkworks-rs/std.git" }
