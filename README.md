@@ -6,16 +6,12 @@ This is a library for threshold cryptography. Specifically, it is a verifiable s
 
 This is an implementation of the scheme detailed in [Blind DKG]().
 
-Ok so I have an elliptic curve group, and my coefficients are coming from a finite field of order r.
-Now, what I'm trying to do is derive a new public key. Mathematically speaking, this is done by taking the product of the group generator raised to each secret.
-However, this is where I'm facing a huge challenge.
-
-So, there are two main types in use, Projective<Config> for group elements, and Fp<MontBackend<FrConfig, 4>, 4> for field elements.
-The group generator is given a a Projective<Config>, however, the coefficients (i.e. secrets) that I'm generating are in the field...
-So, if I want to calculate the product of the group generator exponentiated to a field element... argh this is confusing. 
-
 ### DKG
 This is a proof of concept distributed key generation protocol. The protocol is based on the Feldman VSS scheme. The intention is to augment the design, similar to the ethDKG protocol, to use ZK SNARKs within the disputes process.
+
+![encrypt](https://substackcdn.com/image/fetch/f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fbb7f7e58-8b13-4869-b832-51057fcaa2c5_441x350.png)
+
+![decrypt](https://substackcdn.com/image/fetch/f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fa1fb2edd-12fc-411e-a189-0ff421a6b68a_365x244.png)
 
 ## Installation
 
@@ -30,6 +26,4 @@ run the dkg example with
 ``` bash
 cargo run
 ```
-
-## Key Gen
 
