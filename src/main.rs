@@ -1,14 +1,17 @@
 use ark_ec::Group;
-use ark_ff::{MontBackend, Fp};
+use ark_ff::{MontBackend, Fp, PrimeField, FftField};
 use ark_test_curves::{
-    ed_on_bls12_381::{
-        Projective as G, Fr as ScalarField, FrConfig as FieldConfig,
+    // ed_on_bls12_381::{
+    //     Projective as G, Fr as ScalarField, FrConfig as FieldConfig,
+    // },
+    bls12_381::{
+        G1Projective as G, Fr as ScalarField, FrConfig as FieldConfig,
     },
     Field,
 };
 use ark_poly::{
     polynomial::univariate::DensePolynomial,
-    DenseUVPolynomial, Polynomial,
+    DenseUVPolynomial, Polynomial, GeneralEvaluationDomain, EvaluationDomain, Evaluations,
 };
 use ark_std::rand::Rng;
 use rand_chacha::{
@@ -27,7 +30,7 @@ use crypto_box::{
 fn main() {
     let t = 2;
     let n = 3;
-    let rng = ChaCha20Rng::seed_from_u64(29u64);
+    let rng = ChaCha20Rng::seed_from_u64(23u64);
     // create n actors
     let actors = (1..n).map(|i| Actor{ slot: i, share: None } ).collect();
     // create a new society
@@ -59,9 +62,13 @@ fn main() {
     // now let's say alice forgets her key somehow, well, she can still recover the encrypted text by 
     // getting shares from the society
     let (alice_shares, _) = secret_shares.split_at(t as usize);
-    // now use those shares to reconstruct the polynomial, evaluate it at f(0)
-    let reconstructed_poly = DensePolynomial::<ScalarField>::from_coefficients_slice(alice_shares);
+    // now use those shares to reconstruct the polynomial using FFT, evaluate it at f(0)
+    let domain: GeneralEvaluationDomain<ScalarField> = GeneralEvaluationDomain::new(n as usize)
+                .expect("field is not smooth enough to construct domain");
+    let evaluations = Evaluations::<ScalarField>::from_vec_and_domain(alice_shares.to_vec(), domain);
+    let reconstructed_poly = evaluations.interpolate();
     let secret = reconstructed_poly.evaluate(&ScalarField::from(0));
+    
     let big_secret: num_bigint::BigUint = secret.to_owned().into();
     let secret_bytes = big_secret.to_bytes_le();
     let ptr_sk = secret_bytes.as_ptr() as *const [u8; 32];
