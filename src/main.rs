@@ -1,28 +1,18 @@
-use ark_ec::Group;
-use ark_ff::{MontBackend, Fp, PrimeField, FftField};
-use ark_test_curves::{
-    // ed_on_bls12_381::{
-    //     Projective as G, Fr as ScalarField, FrConfig as FieldConfig,
-    // },
-    bls12_381::{
-        G1Projective as G, Fr as ScalarField, FrConfig as FieldConfig,
-    },
-    Field,
-};
+use ark_ec::{Group, CurveGroup};
+use ark_ff::{Field, PrimeField, UniformRand, FftField, Fp256, MontBackend, BigInteger, FpConfig};
 use ark_poly::{
     polynomial::univariate::DensePolynomial,
-    DenseUVPolynomial, Polynomial, GeneralEvaluationDomain, EvaluationDomain, Evaluations,
+    DenseUVPolynomial, Polynomial,
 };
+use num_bigint::BigUint;
 use ark_std::rand::Rng;
 use rand_chacha::{
 	ChaCha20Rng,
 	rand_core::SeedableRng,
 };
-// use x25519_dalek::{PublicKey, EphemeralSecret};
-use crypto_box::{
-    aead::{Aead, AeadCore},
-    SalsaBox, PublicKey, SecretKey
-};
+
+pub type G = ark_ed_on_bls12_377::EdwardsProjective;
+pub type ScalarField = <G as Group>::ScalarField;
 
 /// In the first go through, we make some assumptions that make things really simple
 /// First, we assume that each 'actor' or participant can only have one secret share at a time (i.e. can only participate in one society)
@@ -30,76 +20,35 @@ use crypto_box::{
 fn main() {
     let t = 2;
     let n = 3;
-    let rng = ChaCha20Rng::seed_from_u64(23u64);
+    let mut rng = ChaCha20Rng::seed_from_u64(23u64);
     // create n actors
-    let actors = (1..n).map(|i| Actor{ slot: i, share: None } ).collect();
-    // create a new society
+    let actors: Vec<Actor<ScalarField>> = (1..n).map(|i| Actor::<ScalarField>::new(i, t, rng.clone())).collect::<Vec<_>>();
+    // create a new society (here, each member already has a secret poly)
     let society = Society::new(actors, n, t);
     // generate keys
-    let shares = society.dkg(rng.clone());
-    // ASSUME OR SIMULATE: sharing phase. This is all on one machine.
-    // SKIP: DISPUTES (verify, unverify, zk snarks); For now we assume all values are valid.
-    // the secret shares are the first element of each of the abov 
-    let secret_shares = shares.iter().map(|x| x[0]).collect::<Vec<_>>();
-    // derive a public key
-    let mpk = society.derive(secret_shares.clone());
-    let big_mpk: num_bigint::BigUint = mpk.to_owned().into();
-    let pubkey_bytes = big_mpk.to_bytes_le();
-    // convert to [u8;32]
-    let ptr = pubkey_bytes.as_ptr() as *const [u8; 32];
-    // let's encrypt something!
-    let pubkey = PublicKey::from(*unsafe { &*ptr });
-    println!("Original pubkey: {:?}", pubkey);
-    // let pubkey = PublicKey::from(pubkey_bytes.as_slice());
-    let alice_secret_key = SecretKey::generate(&mut rng.clone());
-    let alice_public_key = alice_secret_key.public_key();
-    let alice_box = SalsaBox::new(&pubkey, &alice_secret_key);
-    let nonce = SalsaBox::generate_nonce(&mut rng.clone());
-    let plaintext = b"Hello, world!";
-    let ciphertext = alice_box.encrypt(&nonce, &plaintext[..]).map_err(|e| {
-        println!("Failed to encrypt the message: {:?}", e);
-    }).unwrap();
-    // now let's say alice forgets her key somehow, well, she can still recover the encrypted text by 
-    // getting shares from the society
-    let (alice_shares, _) = secret_shares.split_at(t as usize);
-    // now use those shares to reconstruct the polynomial using FFT, evaluate it at f(0)
-    let domain: GeneralEvaluationDomain<ScalarField> = GeneralEvaluationDomain::new(n as usize)
-                .expect("field is not smooth enough to construct domain");
-    let evaluations = Evaluations::<ScalarField>::from_vec_and_domain(alice_shares.to_vec(), domain);
-    let reconstructed_poly = evaluations.interpolate();
-    let secret = reconstructed_poly.evaluate(&ScalarField::from(0));
-    
-    let big_secret: num_bigint::BigUint = secret.to_owned().into();
-    let secret_bytes = big_secret.to_bytes_le();
-    let ptr_sk = secret_bytes.as_ptr() as *const [u8; 32];
-    let reconstructed_secret_key = SecretKey::from(* unsafe { &*ptr_sk });
-    let rpk = reconstructed_secret_key.public_key();
-    println!("rsk: {:?}", secret_bytes);
-    println!("rpk: {:?}", rpk);
-    // decrypt it
-    let recovery_box = SalsaBox::new(&alice_public_key, &reconstructed_secret_key);
-    match recovery_box.decrypt(&nonce, &ciphertext[..]) {
-        Ok(message) => {
-            println!("The message is: {:?}", message);
-        },
-        Err(e) => {
-            println!("Decryption failed: {:?}", e);
-        }
-    }
-    // println!("And did it work? {:?}", recovered_text);
-}
+    society.dkg(rng.clone());
+    let mpk = society.derive_pubkey(rng.clone());
+    println!("pubkey: {:?}", mpk.to_string());
 
-pub struct Society {
+    // now we want to reconstruct the secret key
+    let msk = society.derive_secret_key();
+    println!("secret key : {:?}", msk.to_string());
+
+    // now verify: is <mpk, msk> a valid point on the curve? should be
+    
+} 
+
+pub struct Society<F: Field> {
     // will be made blind eventually
-    pub participants: Vec<Actor>,
+    pub participants: Vec<Actor<F>>,
     pub shares: u8,
     pub threshold: u8,
 }
 
 /// A society is a collection of participants that can generate shares amongst themselves,
 /// derive a pubkey, and reencrypt a secret
-impl Society {
-    fn new(participants: Vec<Actor>, shares: u8, threshold: u8) -> Self {
+impl<F: Field + PrimeField> Society<F> {
+    fn new(participants: Vec<Actor<F>>, shares: u8, threshold: u8) -> Self {
         Self {
             participants, shares, threshold,
         }
@@ -110,15 +59,10 @@ impl Society {
     /// 
     /// * rng: the random number generator
     /// 
-    fn dkg(&self, rng: ChaCha20Rng) -> Vec<Vec<ScalarField>> {
-        let mut shares = Vec::new();
+    fn dkg(&self, rng: ChaCha20Rng) {
         for p in self.participants.iter() {
-            // each participant generates shares
-            let (_, participant_shares) = 
-                p.generate_shares(self.shares, self.threshold, rng.clone());
-            shares.push(participant_shares);
+            p.calculate_shares(self.shares);
         }
-        shares
     }
 
     /// Given a group generator 'g', the public key is the product of the group generator raised to all secret keys
@@ -126,51 +70,83 @@ impl Society {
     /// 
     /// `generator`: The generator to be used to calculate a public key
     ///
-    fn derive(&self, shares: Vec<Fp<MontBackend<FieldConfig, 4>, 4>>) -> ScalarField  {
-        // let modulus = <ScalarField as PrimeField>::MODULUS;
-        let gen = G::generator();
-        // ScalarField::from(gen.to_owned().into());
-        let g = ScalarField::from(2u32);
-        // should be 'actor' based instead of iterating over the shares, we should iterate over actors
-        // then each actor can derive a pubkey independently. 
-        let public_key_shares = shares.iter().map(|share| {
-            let big_share: num_bigint::BigUint = share.to_owned().into();
-            g.pow(big_share.to_u64_digits())
+    fn derive_pubkey<R: Rng + Sized>(&self, mut r: R) -> F  {
+        let g = F::rand(&mut r);
+        let public_key_shares = self.participants.iter().map(|p| {
+            p.derive_pubkey_scalar_field(g)
         }).collect::<Vec<_>>();
-        let mut mpk = public_key_shares[0];
-        for i in 1..shares.len() {
-            mpk = mpk * shares[i];
+        let mut mpk: F = public_key_shares[0];
+        for i in 1..public_key_shares.len() {
+            mpk = mpk * public_key_shares[i];
         }
-        ScalarField::from(mpk)
+        mpk
     }
 
-    fn reencrypt() {
-        todo!("Not yet implemented");
-    }
-
-}
-
-
-/// a participant in the protocol
-pub struct Actor {
-    // todo
-    pub slot: u8,
-    pub share: Option<ScalarField>,
-}
-
-impl Actor {
-    /// generates a random polynomial over the given field, then calculates shares
-    pub fn generate_shares<R: Rng + Sized>(&self, n: u8, t: u8, mut r: R) 
-        -> (DensePolynomial<ScalarField>, Vec<Fp<MontBackend<FieldConfig, 4>, 4>>) {
-        let rand_poly = DensePolynomial::<ScalarField>::rand(t as usize, &mut r);
-        let shares = (0..n).map(|k| {
-            rand_poly.clone().evaluate(&ScalarField::from(k))
+    fn derive_secret_key(&self) -> F {
+        let secret_shares = self.participants.iter().map(|p| {
+            p.secret()
         }).collect::<Vec<_>>();
-        (rand_poly, shares)
+        secret_shares.iter().fold(F::from(0u64), |total ,curr| {
+            total + curr
+        })
     }
 
-    pub fn derive_pubkey(g: ScalarField) {
+    // fn reencrypt() {
+    //     todo!("Not yet implemented");
+    // }
 
+}
+
+#[derive(Clone)]
+/// a participant in the protocol
+/// for now we assume that each participant can only 
+/// participate in a single society
+pub struct Actor<F: Field> {
+    pub slot: u8,
+    pub poly: DensePolynomial<F>,
+}
+
+/// implementation of an actor
+/// a member of the society who should 
+/// participate in the DKG
+impl<F: Field + PrimeField> Actor<F> {
+
+    /// instantiates a new actor with a threshold value and a random polynomial with degree = threshold
+    /// 
+    /// * `t`: the thresold value to set. This will be the 'threshold' in the TSS scheme
+    /// * `r`: The random number generator used to generate the polynomial
+    /// 
+    pub fn new<R: Rng + Sized>(slot: u8, t: u8, mut r: R) -> Actor<F> {
+        let rand_poly = DensePolynomial::<F>::rand(t as usize, &mut r);
+        Self {
+            slot: slot, poly: rand_poly
+        }
+    }
+
+    /// Calculate shares for the actor's polynomial
+    /// 
+    /// * n: calculate {f(1), ..., f(n)}
+    /// 
+    pub fn calculate_shares(&self, n: u8) -> Vec<F> {
+        (1..n).map(|k| {
+            self.poly.clone().evaluate(&F::from(k))
+        }).collect::<Vec<_>>()
+    }
+
+    /// Given a group generator g for the multiplicative group over a finite field (ScalarField),
+    /// calculate g^s to get a public key share
+    /// 
+    /// * g: the generator
+    ///
+    pub fn derive_pubkey_scalar_field(&self, g: F) -> F {
+        let secret = self.poly.clone().evaluate(&F::from(0u64));
+        // let big_secret: BigUint = secret.to_owned().into();
+        let big_secret: BigUint = secret.into_bigint().into();
+        g.pow(big_secret.to_u64_digits())
+    }
+
+    pub fn secret(&self) -> F {
+        self.poly.clone().evaluate(&F::from(0u64))
     }
 
 }

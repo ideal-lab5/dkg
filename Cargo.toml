@@ -10,7 +10,7 @@ license = "GPL-3.0"
 readme = "README.md"
 repository = "https://github.com/driemworks/dkg"
 description = "DKG PoC using arkworks."
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 rand = "0.7.3"
@@ -19,11 +19,15 @@ num-bigint = "0.4.3"
 rand_chacha = { version = "0.3.1", default-features = false }
 
 # x25519-dalek = "1.2.0"
-crypto_box = "0.8.2"
+# crypto_box = "0.8.2"
 
 # arkworks dependencies
-ark-std = { git = "https://github.com/arkworks-rs/std.git" }
-ark-ff = { git = "https://github.com/arkworks-rs/algebra.git" }
-ark-poly = { git = "https://github.com/arkworks-rs/algebra.git", default-features = false, features = ["parallel"] }
-ark-ec = { git = "https://github.com/arkworks-rs/algebra.git" }
-ark-test-curves = { git = "https://github.com/arkworks-rs/algebra.git", default-features = false, features = [ "bls12_381_curve", "mnt6_753", "secp256k1", "ed_on_bls12_381"] }
+# algebra crates
+ark-std = { version = "0.4.0", default-features = false }
+ark-ff = { version = "0.4.0", default-features = false }
+ark-poly = { version = "0.4.0", default-features = false, features = ["parallel"] }
+ark-ec = { version = "0.4.0", default-features = false }
+ark-serialize = { version = "0.4.0", default-features = false }
+# ark-test-curves = { git = "https://github.com/arkworks-rs/algebra.git", default-features = false, features = [ "bls12_381_curve", "mnt6_753", "secp256k1", "ed_on_bls12_381"] }
+ark-ed-on-bls12-377 = { git = "https://github.com/arkworks-rs/curves.git", default-features = false, features = [] }
+# ark-crypto-primitives = { git = "https://github.com/arkworks-rs/crypto-primitives", default-features = false, features = [] }
