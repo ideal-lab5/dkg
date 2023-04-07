@@ -30,4 +30,4 @@ ark-ec = { version = "0.4.0", default-features = false }
 ark-serialize = { version = "0.4.0", default-features = false }
 # ark-test-curves = { git = "https://github.com/arkworks-rs/algebra.git", default-features = false, features = [ "bls12_381_curve", "mnt6_753", "secp256k1", "ed_on_bls12_381"] }
 ark-ed-on-bls12-377 = { git = "https://github.com/arkworks-rs/curves.git", default-features = false, features = [] }
-# ark-crypto-primitives = { git = "https://github.com/arkworks-rs/crypto-primitives", default-features = false, features = [] }
+ark-crypto-primitives = { version = "0.4.0", default-features = false, features = ["encryption"] }
