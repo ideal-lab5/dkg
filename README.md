@@ -13,7 +13,7 @@ This is a proof of concept distributed key generation protocol. The protocol is 
 
 ![decrypt](https://substackcdn.com/image/fetch/f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fa1fb2edd-12fc-411e-a189-0ff421a6b68a_365x244.png)
 
-For decryption/key reconstruction, we will use FFT rather than Lagrange interpolation. https://vitalik.ca/general/2019/05/12/fft.html
+This should be useful: https://www.scitepress.org/papers/2008/19183/19183.pdf
 
 ## Installation
 
