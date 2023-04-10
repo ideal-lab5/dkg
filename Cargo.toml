@@ -5,7 +5,7 @@ authors = [
     "tony riemer <driemworks@idealabs.network>"
 ]
 categories = ["cryptography"]
-keywords = ["pairing", "threshold"]
+keywords = ["pairing", "threshold", "dkg"]
 license = "GPL-3.0"
 readme = "README.md"
 repository = "https://github.com/driemworks/dkg"
@@ -19,17 +19,11 @@ num-bigint = "0.4.3"
 sha2 = "0.10.6"
 rand_chacha = { version = "0.3.1", default-features = false }
 
-# x25519-dalek = "1.2.0"
-# crypto_box = "0.8.2"
-
 # arkworks dependencies
-# algebra crates
 ark-std = { version = "0.4.0", default-features = false }
 ark-ff = { version = "0.4.0", default-features = false }
 ark-poly = { version = "0.4.0", default-features = false, features = ["parallel"] }
 ark-ec = { version = "0.4.0", default-features = false }
 ark-serialize = { version = "0.4.0", default-features = false }
-# ark-test-curves = { git = "https://github.com/arkworks-rs/algebra.git", default-features = false, features = [ "bls12_381_curve", "mnt6_753", "secp256k1", "ed_on_bls12_381"] }
-# ark-bls12-381 = { git = "https://github.com/arkworks-rs/curves.git", default-features = false, features = [] }
 ark-bls12-381 = "0.4.0"
 ark-crypto-primitives = { version = "0.4.0", default-features = false, features = ["encryption"] }

@@ -25,6 +25,9 @@ use ark_bls12_381::{
     G2Projective as G2
 };
 
+#[cfg(test)]
+mod test;
+
 /// Represents a public key in both G1 and G2
 pub struct PublicKey {
     pub pub_g1: G1,
@@ -39,38 +42,6 @@ pub struct Ciphertext {
     pub v: Vec<u8>,
     /// the verification key
     pub w: G2,
-}
-
-/// A distributed key gen experiment over BLS12-381
-fn main() {
-    let t = 2;
-    let n = 3;
-    let mut rng = ChaCha20Rng::seed_from_u64(23u64);
-    // create n actors with threshold of t
-    let actors: Vec<Actor> = (1..n).map(|i| {
-        Actor::new(i, t, rng.clone())
-    }).collect::<Vec<_>>();
-    // create a new society (each member already has a secret poly)
-    let society = Society::new(actors, n, t);
-    society.dkg();
-    // TODO disputes + verification
-    let r1 = Fr::rand(&mut rng.clone());
-    let r2 = Fr::rand(&mut rng.clone());
-    let h1 = G1::generator().mul(r1); 
-    let h2 = G2::generator().mul(r2);
-    let mpk = society.derive_pubkey(h1, h2);
-    // // now we want to reconstruct the secret key and decrypt the message
-    let sks = society.derive_secret_keys();
-    let mut msk = sks[0].clone();
-    for i in 1..sks.len()-2 {
-        msk = msk + sks[i].clone();
-    }
-    let message_digest = sha256(b"Hello, world");
-    let m = slice_to_array_32(&message_digest).unwrap();
-    println!("message bytes: {:?}", m);
-    let ciphertext = encrypt(m, h1, mpk, &mut rng);
-    let recovered_message = decrypt(&ciphertext, ciphertext.u.mul(msk), h2);
-    println!("Recovered Message: {:?}", recovered_message);
 }
 
 /// a society coordinates the:
@@ -133,7 +104,6 @@ impl Society {
 /// for now we assume that each participant can only 
 /// participate in a single society
 pub struct Actor {
-    pub slot: u8,
     // TODO: should this be over Fq or Fr?
     pub poly: DensePolynomial<Fr>,
 
@@ -148,12 +118,12 @@ impl Actor {
     /// * `t`: the thresold value to set. This will be the 'threshold' in the TSS scheme
     /// * `r`: The random number generator used to generate the polynomial
     /// 
-    pub fn new<R: Rng + Sized>(slot: u8, t: u8, mut rng: R) -> Actor {
+    pub fn new<R: Rng + Sized>(t: u8, mut rng: R) -> Actor {
         // generate secret and coefficients
         // let a = vec![<G::ScalarField>::rand(&mut rng); t.try_into().unwrap()];
         let rand_poly = DensePolynomial::<Fr>::rand(t as usize, &mut rng);
         Self {
-            slot: slot, poly: rand_poly
+            poly: rand_poly
         }
     }
 
@@ -274,4 +244,3 @@ pub fn slice_to_array_32(slice: &[u8]) -> Option<&[u8; 32]> {
         None
     }
 }
-
