@@ -2,49 +2,43 @@ use ark_ec::{
     AffineRepr, Group, CurveGroup,
     pairing::Pairing,
 };
-use ark_ff::{Field, PrimeField, UniformRand, FftField, Fp256, MontBackend, BigInteger, FpConfig};
+use ark_ff::UniformRand;
 use ark_poly::{
     polynomial::univariate::DensePolynomial,
     DenseUVPolynomial, Polynomial,
 };
 use ark_serialize::CanonicalSerialize;
-use num_bigint::BigUint;
 use ark_std::{
-    Zero, One, ops::{Add, Div, Mul, Sub},
+    ops::Mul,
     rand::Rng,
-    marker::PhantomData,
 };
 use rand_chacha::{
 	ChaCha20Rng,
 	rand_core::SeedableRng,
 };
-use ark_crypto_primitives::encryption::{
-    AsymmetricEncryptionScheme, 
-    elgamal::{
-        ElGamal, 
-        Randomness,
-        SecretKey,
-    }
-};
-use std::cmp::Ordering;
+
 use sha2::Digest;
 
 use ark_bls12_381::{
-    Bls12_381, Fr, G1Affine, 
+    Bls12_381, Fr,
     G1Projective as G1, G2Affine, 
     G2Projective as G2
 };
 
+/// Represents a public key in both G1 and G2
 pub struct PublicKey {
     pub pub_g1: G1,
     pub pub_g2: G2,
 }
 
+/// Represents the ciphertext
 pub struct Ciphertext {
+    /// the recovery key
     pub u: G1,
-    pub v: Vec<u8>, // the 'ciphertext'
+    /// the ciphered message
+    pub v: Vec<u8>,
+    /// the verification key
     pub w: G2,
-
 }
 
 /// A distributed key gen experiment over BLS12-381
@@ -58,25 +52,23 @@ fn main() {
     }).collect::<Vec<_>>();
     // create a new society (each member already has a secret poly)
     let society = Society::new(actors, n, t);
-    society.dkg(rng.clone());
+    society.dkg();
     // TODO disputes + verification
     let r1 = Fr::rand(&mut rng.clone());
     let r2 = Fr::rand(&mut rng.clone());
     let h1 = G1::generator().mul(r1); 
     let h2 = G2::generator().mul(r2);
-    let mpk = society.derive_pubkey(h1, h2, &mut rng.clone());
+    let mpk = society.derive_pubkey(h1, h2);
     // // now we want to reconstruct the secret key and decrypt the message
     let sks = society.derive_secret_keys();
     let mut msk = sks[0].clone();
-    for i in (1..sks.len()-1) {
+    for i in 1..sks.len()-2 {
         msk = msk + sks[i].clone();
     }
     let message_digest = sha256(b"Hello, world");
     let m = slice_to_array_32(&message_digest).unwrap();
     println!("message bytes: {:?}", m);
-    // let g1 = G1::generator();
     let ciphertext = encrypt(m, h1, mpk, &mut rng);
-    let recovery_shares: Vec<G1> = sks.iter().map(|sk| ciphertext.u.mul(sk)).collect::<Vec<_>>();
     let recovered_message = decrypt(&ciphertext, ciphertext.u.mul(msk), h2);
     println!("Recovered Message: {:?}", recovered_message);
 }
@@ -105,7 +97,7 @@ impl Society {
     /// 
     /// * `rng`: the random number generator
     /// 
-    fn dkg(&self, rng: ChaCha20Rng) {
+    fn dkg(&self) {
         for p in self.participants.iter() {
             p.calculate_shares(self.shares);
         }
@@ -115,7 +107,7 @@ impl Society {
     /// 
     /// `generator`: The generator to be used to calculate a public key
     ///
-    fn derive_pubkey<R: Rng + Sized>(&self, h1: G1, h2: G2, r: &mut R) -> G2  {
+    fn derive_pubkey(&self, h1: G1, h2: G2) -> G2  {
         // get a pubkey from each actor (in G2)
         let pubkeys = self.participants.iter().map(|p| {
             p.derive_pubkey(h1, h2)
@@ -257,6 +249,18 @@ pub fn encrypt<R: Rng + Sized>(m: &[u8;32], g1: G1, pubkey: G2, rng: &mut R) -> 
     Ciphertext { u, v, w }
 }
 
+/// decrypts a message using the provided key shares
+pub fn decrypt(ct: &Ciphertext, sk: G1, g2:  G2) -> Vec<u8> {
+    let r = Bls12_381::pairing(sk, g2);
+    let mut ret = Vec::new();
+    r.serialize_compressed(&mut ret).unwrap();
+    ret = sha256(&ret);
+    // decode the message
+    for (i, ri) in ret.iter_mut().enumerate().take(32) {
+        *ri ^= ct.v[i];
+    }
+    ret
+}
 
 /// Convert a slice of u8 to an array of u8 of size 32
 /// 
@@ -271,15 +275,3 @@ pub fn slice_to_array_32(slice: &[u8]) -> Option<&[u8; 32]> {
     }
 }
 
-// / decrypts a message using the provided key shares
-pub fn decrypt(ct: &Ciphertext, sk: G1, g2:  G2) -> Vec<u8> {
-    let r = Bls12_381::pairing(sk, g2);
-    let mut ret = Vec::new();
-    r.serialize_compressed(&mut ret).unwrap();
-    ret = sha256(&ret);
-    // decode the message
-    for (i, ri) in ret.iter_mut().enumerate().take(32) {
-        *ri ^= ct.v[i];
-    }
-    ret
-}
