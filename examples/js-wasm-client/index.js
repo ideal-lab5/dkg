@@ -1,9 +1,4 @@
 let wasm;
-// import("./node_modules/dkg/dkg.js").then((js) => {
-//         console.log("wasm is ready");
-//         wasm = js;
-//         // js.keygen(BigInt(seed), threshold);
-//     });
 function setup() {
     import("dkg/dkg.js").then((js) => {
         console.log("wasm is ready");
