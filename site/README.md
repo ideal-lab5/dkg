@@ -1,1 +1,0 @@
-# Example App for calling DKG via wasm

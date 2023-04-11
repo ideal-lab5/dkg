@@ -5,7 +5,7 @@ authors = [
     "tony riemer <driemworks@idealabs.network>"
 ]
 categories = ["cryptography"]
-keywords = ["pairing", "threshold", "dkg"]
+keywords = ["pairing", "threshold", "dkg", "secret-sharing"]
 license = "GPL-3.0"
 readme = "README.md"
 repository = "https://github.com/driemworks/dkg"

@@ -1,0 +1,5 @@
+{
+  "devDependencies": {
+    "@wasm-tool/wasm-pack-plugin": "^1.6.0"
+  }
+}

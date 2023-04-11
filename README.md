@@ -54,6 +54,9 @@ npm link dkg
 npm install
 npm run serve
 ```
-
+<!-- https://www.joshfinnie.com/blog/using-webassembly-created-in-rust-for-fast-react-components/ -->
 Open the application at http://localhost:8080
 
+    // "build:wasm": "cargo build --target wasm32-unknown-unknown",
+    // "build:bindgen": "wasm-bindgen '../target/wasm32-unknown-unknown/debug/dkg.wasm' --out-dir build",
+    // "build": "npm run build:wasm && npm run build:bindgen && npx webpack"
