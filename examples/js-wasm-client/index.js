@@ -8,6 +8,7 @@ function setup() {
     import("dkg/dkg.js").then((js) => {
         console.log("wasm is ready");
         wasm = js;
+        keygen(24, 3); 
     });
 }
 
@@ -25,6 +26,6 @@ function keygen(seed, threshold) {
 }
 
 setup();
-keygen(23, 3);
+// keygen(23, 3);
 
 module.exports = {keygen, setup};
