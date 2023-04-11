@@ -24,9 +24,29 @@ use ark_bls12_381::{
     G1Projective as G1, G2Affine, 
     G2Projective as G2
 };
+use wasm_bindgen::prelude::*;
 
 #[cfg(test)]
 mod test;
+
+
+#[wasm_bindgen]
+extern {
+    pub fn alert(s: &str);
+}
+
+#[wasm_bindgen]
+pub fn greet(name: &str) {
+    alert(&format!("Hello, {}!", name));
+}
+
+#[wasm_bindgen]
+pub fn keygen(seed: u64, threshold: u8) {
+    let rng = ChaCha20Rng::seed_from_u64(seed);
+    let actor = Actor::new(threshold, rng);
+    let secret = actor.secret();
+    alert(&format!("Generate a secret key, {}!", secret));
+}
 
 /// Represents a public key in both G1 and G2
 pub struct PublicKey {
@@ -120,7 +140,6 @@ impl Actor {
     /// 
     pub fn new<R: Rng + Sized>(t: u8, mut rng: R) -> Actor {
         // generate secret and coefficients
-        // let a = vec![<G::ScalarField>::rand(&mut rng); t.try_into().unwrap()];
         let rand_poly = DensePolynomial::<Fr>::rand(t as usize, &mut rng);
         Self {
             poly: rand_poly
@@ -138,6 +157,12 @@ impl Actor {
         }).collect::<Vec<_>>()
     }
 
+    /// derive the public key based on the derived secret f(0)
+    /// over both G1 and G2
+    /// 
+    /// `h1`: A generator for G1
+    /// `h2`: A generator for G2
+    /// 
     pub fn derive_pubkey(&self, h1: G1, h2: G2) -> PublicKey {
         let sk = self.secret();
         PublicKey { 
