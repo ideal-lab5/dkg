@@ -1,25 +1,23 @@
+/* global BigInt */
+
+import logo from './logo.svg';
 import './App.css';
-import { useState, useEffect } from 'react';
+import { keygen } from 'dkg';
+import { useEffect } from 'react';
 
 function App() {
 
-  const[wasm, setWasm] = useState(null);
-
   useEffect(() => {
-    async function set_wasm() {
-      setWasm(await import("dkg/dkg.js"));
-    }
-    set_wasm();
+    // init().then(() => {
+      // keygen(BigInt(23), 3);
+    // });
   }, []);
 
   return (
     <div className="App">
-        <div>
-          DKG Wasm Example
-        </div>
-        <div>
-          {wasm ? wasm.greet('hello') : 'wasm not loaded'}
-        </div>
+      <div>
+        <h2>DKG Wasm Example</h2>
+      </div>
     </div>
   );
 }

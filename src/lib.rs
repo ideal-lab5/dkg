@@ -35,12 +35,16 @@ extern {
 }
 
 #[wasm_bindgen]
-pub fn keygen(seed: u64, threshold: u8) {
+pub fn keygen(seed: u64, threshold: u8) -> String {
     let rng = ChaCha20Rng::seed_from_u64(seed);
     let actor = Actor::new(threshold, rng);
-    let secret = actor.secret();
-    alert(&format!("Generate a secret key, {}!", secret));
+    actor.secret().to_string()
 }
+
+// #[wasm_bindgen]
+// pub fn derive_pubkey() -> PublicKey {
+
+// }
 
 /// Represents a public key in both G1 and G2
 pub struct PublicKey {
