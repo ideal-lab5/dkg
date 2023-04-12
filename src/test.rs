@@ -4,6 +4,8 @@ use rand_chacha::{
 	rand_core::SeedableRng,
 };
 
+use ark_std::collections::HashMap;
+
 #[test]
 pub fn society_can_encrypt_and_decrypt() {
     let t = 2;
@@ -52,4 +54,47 @@ pub fn single_actor_can_calculate_and_verify_shares() {
     shares.iter().for_each(|(s, c)| {
         assert_eq!(g2.mul(s), *c);
     });
+}
+
+#[test]
+pub fn small_dkg_simulation() {
+    let t = 2;
+    let n = 3;
+    let g1 = G1::generator();
+    let g2 = G2::generator();
+    let mut rng = ChaCha20Rng::seed_from_u64(23u64);
+    // create n actors with threshold of t
+    let actors: Vec<Actor> = (1..n).map(|i| {
+        Actor::new(i, g1, g2, t, rng.clone())
+    }).collect::<Vec<_>>();
+
+    // then each actor generates shares and commitments
+    // we'll assume that each actor has its own map, but for now, 
+    // we use a hashmap(slot => (slot_of_sender, secret_share, commitment))
+    // at the end it should look something like....
+    // [0 -> {(1, s10, c10), (2, s20, c20)}. 1 -> {(0, s01, c01), (2, s21, c21)}, ...]
+    let mut share_map = HashMap::<u64, Vec<(u64, Fr, G2)>>::new();
+    for actor in actors.clone() {
+        let shares = actor.calculate_shares(n as u8);
+        // distribute a share to each of the other actors
+        for i in 1..n {
+            if i != actor.slot {
+                let entry = (actor.slot, shares[i as usize].0, shares[i as usize].1);
+                println!("sharing: {:?}", entry);
+                // if the map is empty, insert a new vec with one entr
+                share_map.entry(i)
+                    .or_insert_with(Vec::new)
+                    .push((actor.slot, shares[i as usize].0, shares[i as usize].1))
+            }
+        }
+    }
+
+    // now each actor verifies the shares it recieved
+    for actor in actors {
+        let shared_shares = share_map.get(&actor.slot).unwrap();
+        for (slot, share, commitment) in shared_shares.iter() {
+            // now verify each share
+            assert_eq!(actor.g2.mul(share), *commitment);
+        }
+    }
 }

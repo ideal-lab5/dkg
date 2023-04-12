@@ -141,10 +141,6 @@ impl Actor {
     pub fn new<R: Rng + Sized>(slot: u64, g1: G1, g2: G2, t: u8, mut rng: R) -> Actor {
         // generate secret and coefficients
         let rand_poly = DensePolynomial::<Fr>::rand(t as usize, &mut rng);
-        // let coeffs = rand_poly.coeffs().iter().map(|c| {
-        //     g.mul(c)
-        // }).collect;
-
         Self {
             slot: slot,
             poly: rand_poly,
@@ -159,9 +155,10 @@ impl Actor {
     /// * n: The number of shares to calculate: {f(1), ..., f(n)}
     /// 
     pub fn calculate_shares(&self, n: u8) -> Vec<(Fr, G2)> {
-        (1..n).map(|k| {
+        (1..n+1).map(|k| {
+            // don't calculate '0'th share because that's the secret
             let secret_share = self.poly.clone().evaluate(&<Fr>::from(k));
-            // calculate the commitment 
+            // calculate commitment 
             let c = self.g2.mul(secret_share);
             (secret_share, c) 
         }).collect::<Vec<_>>()
@@ -202,20 +199,6 @@ fn hash_h(g: G1, x: &[u8]) -> G2 {
     hash_to_g2(&serialized).into()
 }
 
-// fn hash_to_g1(b: &[u8]) -> G1Affine {
-//     let mut nonce = 0u32;
-//     loop {
-//         let c = [b"cryptex-domain-g1", b, b"cryptex-sep", &nonce.to_be_bytes()].concat();
-//         match G1Affine::from_random_bytes(&sha256(&c)) {
-//             Some(v) => {
-//                 // if v.is_in_correct_subgroup_assuming_on_curve() { return v.into(); }
-//                 return v.mul_by_cofactor_to_group().into_affine();
-//             }
-//             None => nonce += 1,
-//         }
-//     }
-// }
-
 fn hash_to_g2(b: &[u8]) -> G2Affine {
     let mut nonce = 0u32;
     loop {
@@ -229,7 +212,6 @@ fn hash_to_g2(b: &[u8]) -> G2Affine {
         }
     }
 }
-
 
 /// encrypts the message to a given public key
 pub fn encrypt<R: Rng + Sized>(m: &[u8;32], g1: G1, pubkey: G2, rng: &mut R) -> Ciphertext {
