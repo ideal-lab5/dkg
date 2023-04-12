@@ -30,12 +30,12 @@ use wasm_bindgen::prelude::*;
 mod test;
 
 #[wasm_bindgen]
-pub fn keygen(seed: u64, threshold: u8, r1: u64, r2: u64) -> String {
+pub fn keygen(seed: u64, threshold: u8, r1: u64, r2: u64) -> Vec<u8> {
     let rng = ChaCha20Rng::seed_from_u64(seed);
     let h1 = G1::generator().mul(Fr::from(r1)); 
     let h2 = G2::generator().mul(Fr::from(r2));
     let actor = Actor::new(0, h1, h2, threshold, rng);
-    actor.secret().to_string()
+    actor.secret().to_string().as_bytes().to_vec()
 }
 
 // #[wasm_bindgen]
@@ -115,19 +115,16 @@ impl Society {
 }
 
 #[derive(Clone)]
-/// a participant in the protocol
-/// for now we assume that each participant can only 
-/// participate in a single society
 pub struct Actor {
     pub slot: u64,
     // TODO: should this be over Fq or Fr?
     pub poly: DensePolynomial<Fr>,
+    /// the generator for G1
     pub g1: G1,
+    /// the generator for G2
     pub g2: G2,
 }
 
-/// implementation of an actor
-/// a member of the society who can participate in the DKG
 impl Actor {
     /// create a new actor with a threshold value and a random polynomial with degree = threshold
     /// over the given scalar field
