@@ -30,16 +30,13 @@ use wasm_bindgen::prelude::*;
 mod test;
 
 #[wasm_bindgen]
-extern {
-    pub fn alert(s: &str);
+pub fn keygen(seed: u64, threshold: u8, r1: u64, r2: u64) -> String {
+    let rng = ChaCha20Rng::seed_from_u64(seed);
+    let h1 = G1::generator().mul(Fr::from(r1)); 
+    let h2 = G2::generator().mul(Fr::from(r2));
+    let actor = Actor::new(0, h1, h2, threshold, rng);
+    actor.secret().to_string()
 }
-
-// #[wasm_bindgen]
-// pub fn keygen(seed: u64, threshold: u8) -> String {
-//     let rng = ChaCha20Rng::seed_from_u64(seed);
-//     let actor = Actor::new(threshold, rng);
-//     actor.secret().to_string()
-// }
 
 // #[wasm_bindgen]
 // pub fn derive_pubkey() -> PublicKey {
