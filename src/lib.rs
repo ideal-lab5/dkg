@@ -34,12 +34,12 @@ extern {
     pub fn alert(s: &str);
 }
 
-#[wasm_bindgen]
-pub fn keygen(seed: u64, threshold: u8) -> String {
-    let rng = ChaCha20Rng::seed_from_u64(seed);
-    let actor = Actor::new(threshold, rng);
-    actor.secret().to_string()
-}
+// #[wasm_bindgen]
+// pub fn keygen(seed: u64, threshold: u8) -> String {
+//     let rng = ChaCha20Rng::seed_from_u64(seed);
+//     let actor = Actor::new(threshold, rng);
+//     actor.secret().to_string()
+// }
 
 // #[wasm_bindgen]
 // pub fn derive_pubkey() -> PublicKey {
@@ -122,9 +122,11 @@ impl Society {
 /// for now we assume that each participant can only 
 /// participate in a single society
 pub struct Actor {
+    pub slot: u64,
     // TODO: should this be over Fq or Fr?
     pub poly: DensePolynomial<Fr>,
-
+    pub g1: G1,
+    pub g2: G2,
 }
 
 /// implementation of an actor
@@ -136,22 +138,32 @@ impl Actor {
     /// * `t`: the thresold value to set. This will be the 'threshold' in the TSS scheme
     /// * `r`: The random number generator used to generate the polynomial
     /// 
-    pub fn new<R: Rng + Sized>(t: u8, mut rng: R) -> Actor {
+    pub fn new<R: Rng + Sized>(slot: u64, g1: G1, g2: G2, t: u8, mut rng: R) -> Actor {
         // generate secret and coefficients
         let rand_poly = DensePolynomial::<Fr>::rand(t as usize, &mut rng);
+        // let coeffs = rand_poly.coeffs().iter().map(|c| {
+        //     g.mul(c)
+        // }).collect;
+
         Self {
-            poly: rand_poly
+            slot: slot,
+            poly: rand_poly,
+            g1: g1,
+            g2: g2,
         }
     }
 
-    /// Calculate secret shares for the actor's polynomial
-    /// The shares can then be distributed as per a VSS scheme
+    /// Calculate secret shares for the secret polynomial
+    /// The shares can then be encrypted + distributed
     /// 
     /// * n: The number of shares to calculate: {f(1), ..., f(n)}
     /// 
-    pub fn calculate_shares(&self, n: u8) -> Vec<Fr> {
+    pub fn calculate_shares(&self, n: u8) -> Vec<(Fr, G2)> {
         (1..n).map(|k| {
-            self.poly.clone().evaluate(&<Fr>::from(k))
+            let secret_share = self.poly.clone().evaluate(&<Fr>::from(k));
+            // calculate the commitment 
+            let c = self.g2.mul(secret_share);
+            (secret_share, c) 
         }).collect::<Vec<_>>()
     }
 
