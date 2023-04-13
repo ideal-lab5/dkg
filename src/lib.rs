@@ -16,7 +16,6 @@ use rand_chacha::{
 	ChaCha20Rng,
 	rand_core::SeedableRng,
 };
-use serde::{Serialize, Deserialize};
 use sha2::Digest;
 
 use ark_bls12_381::{
@@ -24,10 +23,28 @@ use ark_bls12_381::{
     G1Projective as G1, G2Affine, 
     G2Projective as G2
 };
+
+use serde::{Serialize, Deserialize};
+use serde_wasm_bindgen::{from_value, to_value};
 use wasm_bindgen::prelude::*;
 
 #[cfg(test)]
 mod test;
+
+#[derive(Serialize, Deserialize)]
+pub struct Share {
+    pub share: Vec<u8>,
+    pub commitment: Vec<u8>,
+}
+
+// #[wasm_bindgen]
+#[derive(Serialize, Deserialize)]
+pub struct WPublicKey {
+    /// the public key in G1
+    pub p1: Vec<u8>,
+    /// the public key in G2
+    pub p2: Vec<u8>,
+}
 
 #[wasm_bindgen]
 pub fn keygen(seed: u64, threshold: u8) -> Vec<u8> {
@@ -64,7 +81,7 @@ pub fn calculate_secret(coeffs_blob: Vec<u8>) -> Vec<u8> {
 }
 
 #[wasm_bindgen]
-pub fn calculate_shares(n: u8, coeffs_blob: Vec<u8>) -> Vec<u8> {
+pub fn calculate_shares(n: u8, coeffs_blob: Vec<u8>) -> JsValue {
     let h2 = G2::generator();
     // TODO: this could be its own function (recover_poly(coeffs_blob))
     let deserialized_coeffs: Vec<Vec<u8>> = bincode::deserialize(&coeffs_blob).unwrap();
@@ -75,7 +92,7 @@ pub fn calculate_shares(n: u8, coeffs_blob: Vec<u8>) -> Vec<u8> {
     let f = DensePolynomial::<Fr>::from_coefficients_vec(coeffs);
     let shares: Vec<(Fr, G2)> = do_calculate_shares(n, h2, f);
     let modulus: num_bigint::BigUint = Fr::MODULUS.into();
-    let serializable_shares: Vec<(Vec<u8>, Vec<u8>)> = shares.iter().map(|(s, c)| {
+    let serializable_shares: Vec<Share> = shares.iter().map(|(s, c)| {
         // something weird is going on with type annotations here..
         // c^modulus = c since the field is finite and prime order
         let x = s.pow(modulus.to_u64_digits());
@@ -85,13 +102,19 @@ pub fn calculate_shares(n: u8, coeffs_blob: Vec<u8>) -> Vec<u8> {
         // can serialize c, TODO: get proper vec size, that one is way too big
         let mut commitments_bytes = Vec::with_capacity(1000);
         c.serialize_compressed(&mut commitments_bytes).unwrap();
-        (bytes_be_s, commitments_bytes)
+        Share {
+            share: bytes_be_s, 
+            commitment: commitments_bytes,
+        }
     }).collect::<Vec<_>>();
-    bincode::serialize(&serializable_shares).unwrap()
+
+    // bincode::serialize(&serializable_shares).unwrap()
+    serde_wasm_bindgen::to_value(&serializable_shares).unwrap()
 }
 
+/// calculate the public key in G1 and G2 for a given secret
 #[wasm_bindgen]
-pub fn calculate_pubkey(seed: u64, r1: u64, r2: u64, secret: Vec<u8>) -> Vec<u8> {
+pub fn calculate_pubkey(seed: u64, r1: u64, r2: u64, secret: Vec<u8>) -> JsValue {
     // try recover secret
     let big_secret_bytes_be = bincode::deserialize(&secret).unwrap();
     let big_secret: num_bigint::BigUint = num_bigint::BigUint::from_bytes_be(big_secret_bytes_be);
@@ -103,19 +126,26 @@ pub fn calculate_pubkey(seed: u64, r1: u64, r2: u64, secret: Vec<u8>) -> Vec<u8>
     let pk2 = h2.mul(secret);
     // could make bytes the size of both key
     // then when deserializing, just make sure I use the right number of bytes for each key
-    let mut bytes = Vec::with_capacity(1000);
-    pk2.serialize_compressed(&mut bytes).unwrap();
-    // bincode::serialize(&pk1).unwrap()
-    bytes   
+    let mut bytes_1 = Vec::with_capacity(1000);
+    pk1.serialize_compressed(&mut bytes_1).unwrap();
+
+    let mut bytes_2 = Vec::with_capacity(1000);
+    pk2.serialize_compressed(&mut bytes_2).unwrap();
+    
+    let pubkey = WPublicKey {
+        p1: bytes_1,
+        p2: bytes_2,
+    };
+    serde_wasm_bindgen::to_value(&pubkey).unwrap()
 }
 
+// /// will give the master pubkey in G2 only
 // #[wasm_bindgen]
-// pub fn derive_pubkey(pubkey_blobs: Vec<Vec<u8>>) -> Vec<u8> {
-//     let pubkeys: Vec<G2> = bincode::deserialize(&pubkey_blobs);
-//     let mpk = do_derive_pubkey(pubkeys);
-//     let mut bytes = Vec::with_capacity(1000);
-//     mpk.serialize_compressed(&mut bytes).unwrap();
-//     bytes   
+// pub fn combine_pubkeys(pubkeys: Vec<WPublicKey>) {
+//     // let mpk = do_derive_pubkey(pubkeys);
+//     // let mut bytes = Vec::with_capacity(1000);
+//     // mpk.serialize_compressed(&mut bytes).unwrap();
+//     // bytes
 // }
 
 pub fn do_calculate_shares(n: u8, g2: G2, poly: DensePolynomial<Fr>) -> Vec<(Fr, G2)> {
@@ -128,15 +158,15 @@ pub fn do_calculate_shares(n: u8, g2: G2, poly: DensePolynomial<Fr>) -> Vec<(Fr,
     }).collect::<Vec<_>>()
 }
 
-fn do_derive_pubkey(pubkeys: Vec<G2>) -> G2  {
-    // using second returned val since we want the pubkey in G2
-    let mut mpk = pubkeys[0];
-    // instead of adding, should we be calculating the elliptic curve pairings? 
-    for i in 1..pubkeys.len() - 1 {
-        mpk = mpk + pubkeys[i];
-    }
-    mpk
-}
+// fn do_derive_pubkey(pubkeys: Vec<WPublicKey>) -> G2  {
+//     // using second returned val since we want the pubkey in G2
+//     let mut mpk = pubkeys[0].p2;
+//     // instead of adding, should we be calculating the elliptic curve pairings? 
+//     for i in 1..pubkeys.len() - 1 {
+//         mpk = mpk + pubkeys[i].p2;
+//     }
+//     mpk
+// }
 
 /// Represents a public key in both G1 and G2
 // #[derive(Serialize)]
