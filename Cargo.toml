@@ -21,6 +21,8 @@ crate-type = ["cdylib"]
 wasm-opt = false
 
 [dependencies]
+bincode = "1.0"
+serde = { version = "1.0.160", features = ["derive"] }
 wasm-bindgen = "0.2"
 rand = "0.7.3"
 byteorder = "1.4.3"

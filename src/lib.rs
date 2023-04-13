@@ -2,7 +2,7 @@ use ark_ec::{
     AffineRepr, Group, CurveGroup,
     pairing::Pairing,
 };
-use ark_ff::UniformRand;
+use ark_ff::{Field, PrimeField, UniformRand};
 use ark_poly::{
     polynomial::univariate::DensePolynomial,
     DenseUVPolynomial, Polynomial,
@@ -16,7 +16,7 @@ use rand_chacha::{
 	ChaCha20Rng,
 	rand_core::SeedableRng,
 };
-
+use serde::{Serialize, Deserialize};
 use sha2::Digest;
 
 use ark_bls12_381::{
@@ -30,20 +30,116 @@ use wasm_bindgen::prelude::*;
 mod test;
 
 #[wasm_bindgen]
-pub fn keygen(seed: u64, threshold: u8, r1: u64, r2: u64) -> Vec<u8> {
+pub fn keygen(seed: u64, threshold: u8) -> Vec<u8> {
+    let rng = ChaCha20Rng::seed_from_u64(seed);
+    let h1 = G1::generator(); 
+    let h2 = G2::generator();
+    let actor = Actor::new(0, h1, h2, threshold, rng);
+    // should return coefficients to polynomial
+    let modulus: num_bigint::BigUint = Fr::MODULUS.into();
+    // we assume only positive values
+    let coeffs: Vec<Vec<u8>> = actor.poly.coeffs().iter().map(|c| {
+        // something weird is going on with type annotations here..
+        // c^modulus = c since the field is finite and prime order
+        let a = c.pow(modulus.to_u64_digits());
+        let big_c: num_bigint::BigUint = a.into();
+        // be vs le?
+        big_c.to_bytes_be()
+    }).collect::<Vec<_>>();
+    bincode::serialize(&coeffs).unwrap()
+}
+
+#[wasm_bindgen]
+pub fn calculate_secret(coeffs_blob: Vec<u8>) -> Vec<u8> {
+    let deserialized_coeffs: Vec<Vec<u8>> = bincode::deserialize(&coeffs_blob).unwrap();
+    // convert BigUint -> Fr
+    let coeffs: Vec<Fr> = deserialized_coeffs.iter().map(|c| {
+        let big_c: num_bigint::BigUint = num_bigint::BigUint::from_bytes_be(c);
+        Fr::from(big_c)
+    }).collect::<Vec<_>>();
+    let f = DensePolynomial::<Fr>::from_coefficients_vec(coeffs);
+    let secret: Fr = f.clone().evaluate(&<Fr>::from(0u64));
+    let big_secret: num_bigint::BigUint = secret.into();
+    bincode::serialize(&big_secret.to_bytes_be()).unwrap()
+}
+
+#[wasm_bindgen]
+pub fn calculate_shares(n: u8, coeffs_blob: Vec<u8>) -> Vec<u8> {
+    let h2 = G2::generator();
+    // TODO: this could be its own function (recover_poly(coeffs_blob))
+    let deserialized_coeffs: Vec<Vec<u8>> = bincode::deserialize(&coeffs_blob).unwrap();
+    let coeffs: Vec<Fr> = deserialized_coeffs.iter().map(|c| {
+        let big_c: num_bigint::BigUint = num_bigint::BigUint::from_bytes_be(c);
+        Fr::from(big_c)
+    }).collect::<Vec<_>>();
+    let f = DensePolynomial::<Fr>::from_coefficients_vec(coeffs);
+    let shares: Vec<(Fr, G2)> = do_calculate_shares(n, h2, f);
+    let modulus: num_bigint::BigUint = Fr::MODULUS.into();
+    let serializable_shares: Vec<(Vec<u8>, Vec<u8>)> = shares.iter().map(|(s, c)| {
+        // something weird is going on with type annotations here..
+        // c^modulus = c since the field is finite and prime order
+        let x = s.pow(modulus.to_u64_digits());
+        // conver shares to biguint and then to_bytes_be
+        let big_s: num_bigint::BigUint = x.into();
+        let bytes_be_s = big_s.to_bytes_be();
+        // can serialize c, TODO: get proper vec size, that one is way too big
+        let mut commitments_bytes = Vec::with_capacity(1000);
+        c.serialize_compressed(&mut commitments_bytes).unwrap();
+        (bytes_be_s, commitments_bytes)
+    }).collect::<Vec<_>>();
+    bincode::serialize(&serializable_shares).unwrap()
+}
+
+#[wasm_bindgen]
+pub fn calculate_pubkey(seed: u64, r1: u64, r2: u64, secret: Vec<u8>) -> Vec<u8> {
+    // try recover secret
+    let big_secret_bytes_be = bincode::deserialize(&secret).unwrap();
+    let big_secret: num_bigint::BigUint = num_bigint::BigUint::from_bytes_be(big_secret_bytes_be);
+    let secret = Fr::from(big_secret);
     let rng = ChaCha20Rng::seed_from_u64(seed);
     let h1 = G1::generator().mul(Fr::from(r1)); 
     let h2 = G2::generator().mul(Fr::from(r2));
-    let actor = Actor::new(0, h1, h2, threshold, rng);
-    actor.secret().to_string().as_bytes().to_vec()
+    let pk1 = h1.mul(secret);
+    let pk2 = h2.mul(secret);
+    // could make bytes the size of both key
+    // then when deserializing, just make sure I use the right number of bytes for each key
+    let mut bytes = Vec::with_capacity(1000);
+    pk2.serialize_compressed(&mut bytes).unwrap();
+    // bincode::serialize(&pk1).unwrap()
+    bytes   
 }
 
 // #[wasm_bindgen]
-// pub fn derive_pubkey() -> PublicKey {
-
+// pub fn derive_pubkey(pubkey_blobs: Vec<Vec<u8>>) -> Vec<u8> {
+//     let pubkeys: Vec<G2> = bincode::deserialize(&pubkey_blobs);
+//     let mpk = do_derive_pubkey(pubkeys);
+//     let mut bytes = Vec::with_capacity(1000);
+//     mpk.serialize_compressed(&mut bytes).unwrap();
+//     bytes   
 // }
 
+pub fn do_calculate_shares(n: u8, g2: G2, poly: DensePolynomial<Fr>) -> Vec<(Fr, G2)> {
+    (1..n+1).map(|k| {
+        // don't calculate '0'th share because that's the secret
+        let secret_share = poly.clone().evaluate(&<Fr>::from(k));
+        // calculate commitment 
+        let c = g2.mul(secret_share);
+        (secret_share, c) 
+    }).collect::<Vec<_>>()
+}
+
+fn do_derive_pubkey(pubkeys: Vec<G2>) -> G2  {
+    // using second returned val since we want the pubkey in G2
+    let mut mpk = pubkeys[0];
+    // instead of adding, should we be calculating the elliptic curve pairings? 
+    for i in 1..pubkeys.len() - 1 {
+        mpk = mpk + pubkeys[i];
+    }
+    mpk
+}
+
 /// Represents a public key in both G1 and G2
+// #[derive(Serialize)]
 pub struct PublicKey {
     pub pub_g1: G1,
     pub pub_g2: G2,
