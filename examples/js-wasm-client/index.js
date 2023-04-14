@@ -16,6 +16,23 @@ export function calculateShares(shares, coeffsBlob) {
     return wasm.calculate_shares(shares, coeffsBlob);
 }
 
+export function combinePubkeys(pk1, pk2) {
+    return wasm.combine_pubkeys(pk1, pk2);
+}
+
+export function combineSecrets(s1, s2) {
+    return wasm.combine_secrets(s1, s2);
+}
+
+export function thresholdEncrypt(seed, r1, message, pk) {
+    return wasm.threshold_encrypt(BigInt(seed), r1, message, pk);
+}
+
+export function thresholdDecrypt(r2, ciphertextBlob, sk) {
+    return wasm.threshold_decrypt(r2, ciphertextBlob, sk);
+}
+
+// a very basic example
 function basicExample() {
     // bytes for the coefficients of a randomn polynomial
     let coeffsBlob = keygen(23, 2);
@@ -31,11 +48,14 @@ function basicExample() {
     console.log('calculated shares: ' + JSON.stringify(shares)); 
 }
 
-// Q: Can I derive a master public key with javascript? sure, why not?
-// mpk is the sum of all pubkye
+// an example dkg using the wasm bindings
 function dkgExample() {
-    let n = 5;
-    let t = 3;
+    let n = 3;
+    let t = 2;
+
+    let r1 = 89430;
+    let r2 = 110458345;
+
     let shareholders = [];
     // create a group of shareholders
     Array(n).fill(0).map((_, i) => {
@@ -47,19 +67,36 @@ function dkgExample() {
     console.log('created shareholders');
 
     // // now, each shareholder generates shares for its polynomial
+    let secrets = [];
     let pubkeys = [];
     shareholders.forEach(shareholder => {
-        let shares = calculateShares(t, shareholder.poly);
-        // then 'distribute' the shares to other particiipants...
-        // not sure if I can do that right now, need to figure out how to properly serialize first...
+        // let shares = calculateShares(t, shareholder.poly);
+        // then 'distribute' the shares to other participants
         let secret = calculateSecret(shareholder.poly);
-        console.log('generated secret: ' + secret);
-        let pubkey = calculatePublicKey(23, 89430, 110458345, secret);
+        // console.log('generated secret: ' + secret);
+        let pubkey = calculatePublicKey(23, r1, r2, secret);
+        secrets.push(secret);
         pubkeys.push(pubkey);
     });
 
-    console.log('pubkey ' + pubkeys.reduce((a, b) => a + b))
-    // % MODULUS??
+    // now we want to calculate the master public key
+    // we'll do this by iterating over the keys and comining them with the combine function
+    let mpk = pubkeys.reduce((a, b) => combinePubkeys(a, b));
+    console.log('created mpk: ' + JSON.stringify(mpk["p2"]));
+
+    // then recover a threshold of secret keys
+    let msk = secrets.reduce((a, b) => combineSecrets(a, b));
+    console.log('calculated threshold secret key: ' + msk);
+
+    // now we want to use this to encrypt a message
+    let message = new TextEncoder().encode('not random entropy of 32 bytes!!');
+    let ciphertext = thresholdEncrypt(23, r1, message, mpk);
+    console.log('Calculated ciphertext: ' + JSON.stringify(ciphertext));
+
+    // and use it to decrypt a message
+    let recoveredPlaintext = thresholdDecrypt(r2, ciphertext, msk);
+    console.log('recovered: ' + recoveredPlaintext);
+    console.log('original: ' + message);
 }
 
 dkgExample();

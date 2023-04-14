@@ -7,7 +7,7 @@ use ark_poly::{
     polynomial::univariate::DensePolynomial,
     DenseUVPolynomial, Polynomial,
 };
-use ark_serialize::CanonicalSerialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
     ops::Mul,
     rand::Rng,
@@ -39,11 +39,27 @@ pub struct Share {
 
 // #[wasm_bindgen]
 #[derive(Serialize, Deserialize)]
-pub struct WPublicKey {
+pub struct SerializablePublicKey {
     /// the public key in G1
     pub p1: Vec<u8>,
     /// the public key in G2
     pub p2: Vec<u8>,
+}
+
+/// Represents the ciphertext
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SerializableCiphertext {
+    /// the recovery key
+    pub u: Vec<u8>,
+    /// the ciphered message
+    pub v: Vec<u8>,
+    /// the verification key
+    pub w: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+enum Error {
+    MessageLengthInvalid,
 }
 
 #[wasm_bindgen]
@@ -132,41 +148,90 @@ pub fn calculate_pubkey(seed: u64, r1: u64, r2: u64, secret: Vec<u8>) -> JsValue
     let mut bytes_2 = Vec::with_capacity(1000);
     pk2.serialize_compressed(&mut bytes_2).unwrap();
     
-    let pubkey = WPublicKey {
+    let pubkey = SerializablePublicKey {
         p1: bytes_1,
         p2: bytes_2,
     };
     serde_wasm_bindgen::to_value(&pubkey).unwrap()
 }
 
-// /// will give the master pubkey in G2 only
-// #[wasm_bindgen]
-// pub fn combine_pubkeys(pubkeys: Vec<WPublicKey>) {
-//     // let mpk = do_derive_pubkey(pubkeys);
-//     // let mut bytes = Vec::with_capacity(1000);
-//     // mpk.serialize_compressed(&mut bytes).unwrap();
-//     // bytes
-// }
+/// will give the master pubkey in G2 only
+#[wasm_bindgen]
+pub fn combine_pubkeys(pk1: JsValue, pk2: JsValue) -> JsValue {
+    // deserialize both keys
+    // TODO: handle error if deserialization fails
+    let w_pk1: SerializablePublicKey = serde_wasm_bindgen::from_value(pk1).unwrap();
+    let w_pk2: SerializablePublicKey = serde_wasm_bindgen::from_value(pk2).unwrap();
+    // pubkeys in G2
+    let g2_pk1 = G2::deserialize_compressed(&w_pk1.p2[..]).unwrap();
+    let g2_pk2 = G2::deserialize_compressed(&w_pk2.p2[..]).unwrap();
+    let sum = g2_pk1 + g2_pk2;
+    let mut bytes = Vec::with_capacity(1000);
+    sum.serialize_compressed(&mut bytes).unwrap();
+    serde_wasm_bindgen::to_value(&SerializablePublicKey {
+        p1: w_pk1.p1,
+        // this isn't really a good design here
+        // i'm just doing this so we can combine keys
+        // but this field might be ignored for now
+        p2: bytes,
+    }).unwrap()
+}
+
+#[wasm_bindgen]
+pub fn combine_secrets(s1: Vec<u8>, s2: Vec<u8>) -> Vec<u8> {
+    // each secret is encoded as big endian
+    let big_s1 = num_bigint::BigUint::from_bytes_be(&s1);
+    let big_s2 = num_bigint::BigUint::from_bytes_be(&s2);
+    // // convert both to field elements
+    let x1 = Fr::from(big_s1);
+    let x2 = Fr::from(big_s2);
+    let x = x1 + x2;
+    let big_x: num_bigint::BigUint = x.into();
+    big_x.to_bytes_be()
+}
+
+#[wasm_bindgen]
+pub fn threshold_encrypt(seed: u64, r1: u8, msg: Vec<u8>, pk: JsValue) -> Result<JsValue, JsError> {
+    let mut rng = ChaCha20Rng::seed_from_u64(seed);
+    let h1 = G1::generator().mul(Fr::from(r1));
+    let wpk: SerializablePublicKey = serde_wasm_bindgen::from_value(pk).unwrap();
+    let gpk = G2::deserialize_compressed(&wpk.p2[..]).unwrap();
+    let m = slice_to_array_32(&msg).unwrap();
+    let out = encrypt(m, h1, gpk, &mut rng);
+    let mut u_bytes = Vec::with_capacity(1000);
+    let mut v_bytes = Vec::with_capacity(1000);
+    out.u.serialize_compressed(&mut u_bytes).unwrap();
+    out.v.serialize_compressed(&mut v_bytes).unwrap();
+    Ok(serde_wasm_bindgen::to_value(&SerializableCiphertext{
+        u: u_bytes,
+        v: out.v,
+        w: v_bytes,
+    }).unwrap())
+}
+
+/// sk is encoded as big endian
+#[wasm_bindgen]
+pub fn threshold_decrypt(r2: u8, ciphertext_blob: JsValue, sk: Vec<u8>) -> Vec<u8> {
+    let ciphertext: SerializableCiphertext = serde_wasm_bindgen::from_value(ciphertext_blob).unwrap();
+    let h2 = G2::generator().mul(Fr::from(r2));
+    let big_sk = num_bigint::BigUint::from_bytes_be(&sk);
+    let x = Fr::from(big_sk);
+    // convert c.u to group element
+    let u = G1::deserialize_compressed(&ciphertext.u[..]).unwrap();
+    let decryption_key = u.mul(x);
+    let recovered_message = decrypt(ciphertext.v, decryption_key, h2);
+    recovered_message.to_vec()
+}
 
 pub fn do_calculate_shares(n: u8, g2: G2, poly: DensePolynomial<Fr>) -> Vec<(Fr, G2)> {
     (1..n+1).map(|k| {
         // don't calculate '0'th share because that's the secret
-        let secret_share = poly.clone().evaluate(&<Fr>::from(k));
+        let secret_share = poly.clone().evaluate(&<Fr>::from(k)); 
         // calculate commitment 
         let c = g2.mul(secret_share);
         (secret_share, c) 
     }).collect::<Vec<_>>()
 }
-
-// fn do_derive_pubkey(pubkeys: Vec<WPublicKey>) -> G2  {
-//     // using second returned val since we want the pubkey in G2
-//     let mut mpk = pubkeys[0].p2;
-//     // instead of adding, should we be calculating the elliptic curve pairings? 
-//     for i in 1..pubkeys.len() - 1 {
-//         mpk = mpk + pubkeys[i].p2;
-//     }
-//     mpk
-// }
 
 /// Represents a public key in both G1 and G2
 // #[derive(Serialize)]
@@ -357,14 +422,14 @@ pub fn encrypt<R: Rng + Sized>(m: &[u8;32], g1: G1, pubkey: G2, rng: &mut R) -> 
 }
 
 /// decrypts a message using the provided key shares
-pub fn decrypt(ct: &Ciphertext, sk: G1, g2:  G2) -> Vec<u8> {
+pub fn decrypt(ct: Vec<u8>, sk: G1, g2:  G2) -> Vec<u8> {
     let r = Bls12_381::pairing(sk, g2);
     let mut ret = Vec::new();
     r.serialize_compressed(&mut ret).unwrap();
     ret = sha256(&ret);
     // decode the message
     for (i, ri) in ret.iter_mut().enumerate().take(32) {
-        *ri ^= ct.v[i];
+        *ri ^= ct[i];
     }
     ret
 }
