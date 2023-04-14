@@ -1,35 +1,35 @@
 import * as wasm from "dkg";
 
 export function keygen(seed, threshold) {
-    return wasm.keygen(BigInt(seed), threshold);
+    return wasm.w_keygen(BigInt(seed), threshold);
 }
 
-export function calculateSecret(coeffsBlob) {
-    return wasm.calculate_secret(coeffsBlob)
+export function calculateSecret(poly) {
+    return wasm.w_calculate_secret(poly)
 }
 
-export function calculatePublicKey(seed, r1, r2, secret) {
-    return wasm.calculate_pubkey(BigInt(seed), BigInt(r1), BigInt(r2), secret);
+export function calculatePublicKey(r1, r2, secret) {
+    return wasm.w_calculate_pubkey(BigInt(r1), BigInt(r2), secret);
 }
 
 export function calculateShares(shares, coeffsBlob) {
-    return wasm.calculate_shares(shares, coeffsBlob);
+    return wasm.w_calculate_shares(shares, coeffsBlob);
 }
 
 export function combinePubkeys(pk1, pk2) {
-    return wasm.combine_pubkeys(pk1, pk2);
+    return wasm.w_combine_pubkeys(pk1, pk2);
 }
 
 export function combineSecrets(s1, s2) {
-    return wasm.combine_secrets(s1, s2);
+    return wasm.w_combine_secrets(s1, s2);
 }
 
 export function thresholdEncrypt(seed, r1, message, pk) {
-    return wasm.threshold_encrypt(BigInt(seed), r1, message, pk);
+    return wasm.w_encrypt(BigInt(seed), BigInt(r1), message, pk);
 }
 
 export function thresholdDecrypt(r2, ciphertextBlob, sk) {
-    return wasm.threshold_decrypt(r2, ciphertextBlob, sk);
+    return wasm.w_threshold_decrypt(BigInt(r2), ciphertextBlob, sk);
 }
 
 // a very basic example
@@ -52,37 +52,26 @@ function basicExample() {
 function dkgExample() {
     let n = 3;
     let t = 2;
-
+    let seed = 23;
     let r1 = 89430;
     let r2 = 110458345;
-
-    let shareholders = [];
-    // create a group of shareholders
-    Array(n).fill(0).map((_, i) => {
-        shareholders.push({
-            slot: i,
-            poly: keygen(i, t),
-        });
-    });
-    console.log('created shareholders');
-
-    // // now, each shareholder generates shares for its polynomial
+    // for each participant in the protocol
+    // each shareholder generates shares for its polynomial
     let secrets = [];
     let pubkeys = [];
-    shareholders.forEach(shareholder => {
-        // let shares = calculateShares(t, shareholder.poly);
-        // then 'distribute' the shares to other participants
-        let secret = calculateSecret(shareholder.poly);
-        // console.log('generated secret: ' + secret);
-        let pubkey = calculatePublicKey(23, r1, r2, secret);
+    Array(n).fill(0).map((_, i) => {
+        let rand_poly = keygen(seed, t);
+        console.log(JSON.stringify(rand_poly.coeffs));
+        let secret = calculateSecret(rand_poly.coeffs);
         secrets.push(secret);
+        let pubkey = calculatePublicKey(r1, r2, secret)
         pubkeys.push(pubkey);
     });
 
     // now we want to calculate the master public key
     // we'll do this by iterating over the keys and comining them with the combine function
     let mpk = pubkeys.reduce((a, b) => combinePubkeys(a, b));
-    console.log('created mpk: ' + JSON.stringify(mpk["p2"]));
+    console.log('created mpk: ' + JSON.stringify(mpk));
 
     // then recover a threshold of secret keys
     let msk = secrets.reduce((a, b) => combineSecrets(a, b));
