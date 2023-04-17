@@ -29,7 +29,6 @@ use serde::{
     ser::{ Serializer, SerializeStruct },
     de::{ Deserializer }
 };
-use serde_wasm_bindgen::{from_value, to_value};
 use wasm_bindgen::prelude::*;
 
 #[cfg(test)]
@@ -61,6 +60,25 @@ pub struct SerializableCiphertext {
     pub w: Vec<u8>,
 }
 
+
+/// Represents a public key in both G1 and G2
+// #[derive(Serialize)]
+#[derive(Clone)]
+pub struct PublicKey {
+    pub g1: G1,
+    pub g2: G2,
+}
+
+/// Represents the ciphertext
+pub struct Ciphertext {
+    /// the recovery key
+    pub u: G1,
+    /// the ciphered message
+    pub v: Vec<u8>,
+    /// the verification key
+    pub w: G2,
+}
+
 /// a serializable wrapper to represent polynomial coefficiants in the field Fr
 /// when serialized, this struct represents coefficients as big endian byte arrays 
 #[derive(Clone, Debug)]
@@ -82,7 +100,7 @@ impl Serialize for BEPoly {
         S: Serializer,
     {
         let mut state = serializer.serialize_struct("BEPoly", 1)?;
-        // convert each coefficient to big endian repr
+        // each coefficient as big endian
         let be_coeffs = self.coeffs.clone().into_iter().map(|c| {
             let big_c: num_bigint::BigUint = Fr::into(c);
             big_c.to_bytes_be()
@@ -107,37 +125,47 @@ impl<'de> Deserialize<'de> for BEPoly {
     }
 }
 
-#[derive(Debug, Clone)]
-enum Error {
-    MessageLengthInvalid,
-}
-
 #[wasm_bindgen]
 pub fn w_keygen(seed: u64, threshold: u8) -> Result<JsValue, serde_wasm_bindgen::Error> {
     serde_wasm_bindgen::to_value(&s_keygen(seed, threshold))
 }
 
 #[wasm_bindgen]
-pub fn w_calculate_secret(be_poly: JsValue) -> Result<Vec<u8>, serde_wasm_bindgen::Error> {
+pub fn w_calculate_secret(be_poly: JsValue) -> Result<JsValue, serde_wasm_bindgen::Error> {
     let be_poly: BEPoly = serde_wasm_bindgen::from_value(be_poly)?;
-    Ok(s_calculate_secret(be_poly))
+    serde_wasm_bindgen::to_value(&s_calculate_secret(be_poly))
 }
 
 #[wasm_bindgen]
-pub fn w_calculate_pubkey(r1: u64, r2: u64, secret: Vec<u8>) -> Result<JsValue, serde_wasm_bindgen::Error> {
-    let pk = s_calculate_pubkey(r1, r2, secret);
-    serde_wasm_bindgen::to_value(&pk)   
+pub fn w_calculate_pubkey(
+    r1: u64, 
+    r2: u64, 
+    secret: JsValue
+) -> Result<JsValue, serde_wasm_bindgen::Error> {
+    // the secret key is encoded as big endian
+    let sk_be : Vec<u8> = serde_wasm_bindgen::from_value(secret).unwrap();
+    let pk = s_calculate_pubkey(r1, r2, sk_be);
+    serde_wasm_bindgen::to_value(&pk)
 }
 
 #[wasm_bindgen]
-pub fn w_calculate_shares(n: u8, coeffs_blob: Vec<u8>) -> JsValue {
-    calculate_shares(n, coeffs_blob)
+pub fn w_calculate_shares(
+    n: u8, 
+    coeffs_blob: JsValue
+) -> Result<JsValue, serde_wasm_bindgen::Error> {
+    let poly: BEPoly = serde_wasm_bindgen::from_value(coeffs_blob)?;
+    Ok(calculate_shares(n, poly.coeffs))
 }
 
 #[wasm_bindgen]
-pub fn w_combine_pubkeys(pk1: JsValue, pk2: JsValue) -> Result<JsValue, serde_wasm_bindgen::Error> {
-    let w_pk1: SerializablePublicKey = serde_wasm_bindgen::from_value(pk1).unwrap();
-    let w_pk2: SerializablePublicKey = serde_wasm_bindgen::from_value(pk2).unwrap();
+pub fn w_combine_pubkeys(
+    pk1: JsValue, 
+    pk2: JsValue
+) -> Result<JsValue, serde_wasm_bindgen::Error> {
+    let w_pk1: SerializablePublicKey = 
+        serde_wasm_bindgen::from_value(pk1).unwrap();
+    let w_pk2: SerializablePublicKey = 
+        serde_wasm_bindgen::from_value(pk2).unwrap();
     let combined_pk = s_combine_pubkeys(w_pk1, w_pk2);
     serde_wasm_bindgen::to_value(&combined_pk)
 }
@@ -148,14 +176,24 @@ pub fn w_combine_secrets(s1: Vec<u8>, s2: Vec<u8>) -> Vec<u8> {
 }
 
 #[wasm_bindgen]
-pub fn w_encrypt(seed: u64, r1: u64, msg: Vec<u8>, pk: JsValue) -> Result<JsValue, serde_wasm_bindgen::Error> {
+pub fn w_encrypt(
+    seed: u64, 
+    r1: u64, 
+    msg: Vec<u8>, 
+    pk: JsValue
+) -> Result<JsValue, serde_wasm_bindgen::Error> {
     let wpk: SerializablePublicKey = serde_wasm_bindgen::from_value(pk)?;
     serde_wasm_bindgen::to_value(&s_encrypt(seed, r1, msg, wpk))
 }
 
 #[wasm_bindgen]
-pub fn w_threshold_decrypt(r2: u64, ciphertext_blob: JsValue, sk: Vec<u8>) -> Vec<u8> {
-    let ciphertext: SerializableCiphertext = serde_wasm_bindgen::from_value(ciphertext_blob).unwrap();
+pub fn w_threshold_decrypt(
+    r2: u64, 
+    ciphertext_blob: JsValue, 
+    sk: Vec<u8>
+) -> Vec<u8> {
+    let ciphertext: SerializableCiphertext = 
+        serde_wasm_bindgen::from_value(ciphertext_blob).unwrap();
     threshold_decrypt(r2, ciphertext, sk)
 }
 
@@ -172,17 +210,10 @@ pub fn s_calculate_secret(be_poly: BEPoly) -> Vec<u8> {
     big_secret.to_bytes_be()
 }
 
-pub fn calculate_shares(n: u8, coeffs_blob: Vec<u8>) -> JsValue {
+pub fn calculate_shares(n: u8, coeffs: Vec<Fr>) -> JsValue {
     let h2 = G2::generator();
-    // TODO: this could be its own function (recover_poly(coeffs_blob))
-    let deserialized_coeffs: Vec<Vec<u8>> = bincode::deserialize(&coeffs_blob).unwrap();
-    let coeffs: Vec<Fr> = deserialized_coeffs.iter().map(|c| {
-        let big_c: num_bigint::BigUint = num_bigint::BigUint::from_bytes_be(c);
-        Fr::from(big_c)
-    }).collect::<Vec<_>>();
     let f = DensePolynomial::<Fr>::from_coefficients_vec(coeffs);
     let shares: Vec<(Fr, G2)> = do_calculate_shares(n, h2, f);
-    let modulus: num_bigint::BigUint = Fr::MODULUS.into();
     let serializable_shares: Vec<Share> = shares.iter().map(|(s, c)| {
         let big_s: num_bigint::BigUint = Fr::into(*s);
         let bytes_be_s = big_s.to_bytes_be();
@@ -299,6 +330,12 @@ pub fn calculate_secret(f: DensePolynomial<Fr>) -> Fr {
     f.clone().evaluate(&<Fr>::from(0u64))
 }
 
+/// calculate the public key in G1 and G2
+/// 
+/// * `h1`: A generator of G1
+/// * `h2`: A generator of G2
+/// * `sk`: A secret key in the field Fr
+/// 
 pub fn calculate_pubkey(h1: G1, h2: G2, sk: Fr) -> PublicKey {
     PublicKey {
         g1: h1.mul(sk),
@@ -306,6 +343,12 @@ pub fn calculate_pubkey(h1: G1, h2: G2, sk: Fr) -> PublicKey {
     }
 }
 
+/// calculate shares and commitments {(f(i), g2^f(i))} for i in [n]
+///
+/// * `n`: The number of shares to calculate
+/// * `g2`: A generator of G2 (progective)
+/// * `poly`: A polynomial over Fr
+/// 
 pub fn do_calculate_shares(n: u8, g2: G2, poly: DensePolynomial<Fr>) -> Vec<(Fr, G2)> {
     (1..n+1).map(|k| {
         // don't calculate '0'th share because that's the secret
@@ -316,6 +359,7 @@ pub fn do_calculate_shares(n: u8, g2: G2, poly: DensePolynomial<Fr>) -> Vec<(Fr,
     }).collect::<Vec<_>>()
 }
 
+/// combine two public keys
 pub fn combine_pubkeys(pk1: PublicKey, pk2: PublicKey) -> PublicKey {
     PublicKey {
         g1: pk1.g1 + pk2.g1,
@@ -323,12 +367,18 @@ pub fn combine_pubkeys(pk1: PublicKey, pk2: PublicKey) -> PublicKey {
     }
 }
 
+/// combine two secrets
 pub fn combine_secrets(sk1: Fr, sk2: Fr) -> Fr {
     sk1 + sk2
 }
 
 /// encrypts the message to a given public key
-pub fn encrypt<R: Rng + Sized>(m: &[u8;32], g1: G1, pubkey: G2, rng: &mut R) -> Ciphertext {
+pub fn encrypt<R: Rng + Sized>(
+    m: &[u8;32], 
+    g1: G1, 
+    pubkey: G2, 
+    rng: &mut R
+) -> Ciphertext {
     // rand val
     let r = Fr::rand(rng);
     // calculate 'ephemeral' generator (like pubkey)
@@ -351,7 +401,11 @@ pub fn encrypt<R: Rng + Sized>(m: &[u8;32], g1: G1, pubkey: G2, rng: &mut R) -> 
 }
 
 /// decrypts a message using the provided key shares
-pub fn decrypt(ct: Vec<u8>, sk: G1, g2:  G2) -> Vec<u8> {
+pub fn decrypt(
+    ct: Vec<u8>, 
+    sk: G1, 
+    g2:  G2
+) -> Vec<u8> {
     let r = Bls12_381::pairing(sk, g2);
     let mut ret = Vec::new();
     r.serialize_compressed(&mut ret).unwrap();
@@ -361,145 +415,6 @@ pub fn decrypt(ct: Vec<u8>, sk: G1, g2:  G2) -> Vec<u8> {
         *ri ^= ct[i];
     }
     ret
-}
-
-/// Represents a public key in both G1 and G2
-// #[derive(Serialize)]
-#[derive(Clone)]
-pub struct PublicKey {
-    pub g1: G1,
-    pub g2: G2,
-}
-
-/// Represents the ciphertext
-pub struct Ciphertext {
-    /// the recovery key
-    pub u: G1,
-    /// the ciphered message
-    pub v: Vec<u8>,
-    /// the verification key
-    pub w: G2,
-}
-
-/// a society coordinates the:
-/// formation of society
-/// derivation of pubkey (for encryption)
-/// derivation of secret key (for decryption)
-pub struct Society {
-    pub participants: Vec<Actor>,
-    pub shares: u8,
-    pub threshold: u8,
-}
-
-/// A society is a collection of participants that can generate shares amongst themselves,
-/// derive a pubkey, and reencrypt a secret
-impl Society {
-    fn new(participants: Vec<Actor>, shares: u8, threshold: u8) -> Self {
-        Self {
-            participants, shares, threshold,
-        }
-    }
-
-    /// the main distributed key generation algorithm
-    /// each member of the society generates shares and distributes them
-    /// 
-    /// * `rng`: the random number generator
-    /// 
-    fn dkg(&self) {
-        for p in self.participants.iter() {
-            p.calculate_shares(self.shares);
-        }
-    }
-
-    /// combine pubkeys to get a group public key
-    /// 
-    /// `generator`: The generator to be used to calculate a public key
-    ///
-    fn derive_pubkey(&self, h1: G1, h2: G2) -> G2  {
-        // get a pubkey from each actor (in G2)
-        let pubkeys = self.participants.iter().map(|p| {
-            p.derive_pubkey(h1, h2)
-        }).collect::<Vec<_>>();
-        // using second returned val since we want the pubkey in G2
-        let mut mpk = pubkeys[0].g2;
-        // instead of adding, should we be calculating the elliptic curve pairings? 
-        for i in 1..pubkeys.len() - 1 {
-            mpk = mpk + pubkeys[i].g2
-        }
-        mpk
-    }
-
-    fn derive_secret_keys(&self) -> Vec<Fr> {
-        self.participants.iter().map(|p| {
-            p.secret()
-        }).collect::<Vec<_>>()
-    }
-}
-
-#[derive(Clone)]
-pub struct Actor {
-    pub slot: u64,
-    // TODO: should this be over Fq or Fr?
-    pub poly: DensePolynomial<Fr>,
-    /// the generator for G1
-    pub g1: G1,
-    /// the generator for G2
-    pub g2: G2,
-}
-
-impl Actor {
-    /// create a new actor with a threshold value and a random polynomial with degree = threshold
-    /// over the given scalar field
-    /// 
-    /// * `t`: the thresold value to set. This will be the 'threshold' in the TSS scheme
-    /// * `r`: The random number generator used to generate the polynomial
-    /// 
-    pub fn new<R: Rng + Sized>(slot: u64, g1: G1, g2: G2, t: u8, mut rng: R) -> Actor {
-        // generate secret and coefficients
-        let rand_poly = DensePolynomial::<Fr>::rand(t as usize, &mut rng);
-        Self {
-            slot: slot,
-            poly: rand_poly,
-            g1: g1,
-            g2: g2,
-        }
-    }
-
-    /// Calculate secret shares for the secret polynomial
-    /// The shares can then be encrypted + distributed
-    /// 
-    /// * n: The number of shares to calculate: {f(1), ..., f(n)}
-    /// 
-    pub fn calculate_shares(&self, n: u8) -> Vec<(Fr, G2)> {
-        (1..n+1).map(|k| {
-            // don't calculate '0'th share because that's the secret
-            let secret_share = self.poly.clone().evaluate(&<Fr>::from(k));
-            // calculate commitment 
-            let c = self.g2.mul(secret_share);
-            (secret_share, c) 
-        }).collect::<Vec<_>>()
-    }
-
-    /// derive the public key based on the derived secret f(0)
-    /// over both G1 and G2
-    /// 
-    /// `h1`: A generator for G1
-    /// `h2`: A generator for G2
-    /// 
-    pub fn derive_pubkey(&self, h1: G1, h2: G2) -> PublicKey {
-        let sk = self.secret();
-        PublicKey { 
-            g1: h1.mul(sk), 
-            g2: h2.mul(sk) 
-        }
-    }
-
-    /// calculate the actor's secret key
-    /// it is the secret polynomial evaluated at 0
-    pub fn secret(&self) -> Fr {
-        self.poly.clone().evaluate(&<Fr>::from(0u64))
-    }
-
 }
 
 fn sha256(b: &[u8]) -> Vec<u8> {
@@ -529,42 +444,6 @@ fn hash_to_g2(b: &[u8]) -> G2Affine {
     }
 }
 
-// /// encrypts the message to a given public key
-// pub fn encrypt<R: Rng + Sized>(m: &[u8;32], g1: G1, pubkey: G2, rng: &mut R) -> Ciphertext {
-//     // rand val
-//     let r = Fr::rand(rng);
-//     // calculate 'ephemeral' generator (like pubkey)
-//     let u = g1.mul(r);
-//     // verification key
-//     let vkr = Bls12_381::pairing(g1, pubkey.mul(r));
-//     let mut v = Vec::new();
-//     vkr.serialize_compressed(&mut v).unwrap();
-//     // hash it
-//     v = sha256(&v);
-//     // encode the message
-//     for i in 0..32 {
-//         v[i] ^= m[i];
-//     }
-//     // hash the encoded message using random generator
-//     let h = hash_h(u, &v);
-//     // verification key
-//     let w = h.mul(r);
-//     Ciphertext { u, v, w }
-// }
-
-// /// decrypts a message using the provided key shares
-// pub fn decrypt(ct: Vec<u8>, sk: G1, g2:  G2) -> Vec<u8> {
-//     let r = Bls12_381::pairing(sk, g2);
-//     let mut ret = Vec::new();
-//     r.serialize_compressed(&mut ret).unwrap();
-//     ret = sha256(&ret);
-//     // decode the message
-//     for (i, ri) in ret.iter_mut().enumerate().take(32) {
-//         *ri ^= ct[i];
-//     }
-//     ret
-// }
-
 /// Convert a slice of u8 to an array of u8 of size 32
 /// 
 /// * `slice`: The slize to convert
@@ -577,3 +456,124 @@ pub fn slice_to_array_32(slice: &[u8]) -> Option<&[u8; 32]> {
         None
     }
 }
+
+// /// a society coordinates the:
+// /// formation of society
+// /// derivation of pubkey (for encryption)
+// /// derivation of secret key (for decryption)
+// pub struct Society {
+//     pub participants: Vec<Actor>,
+//     pub shares: u8,
+//     pub threshold: u8,
+// }
+
+// /// A society is a collection of participants that can generate shares amongst themselves,
+// /// derive a pubkey, and reencrypt a secret
+// impl Society {
+//     fn new(participants: Vec<Actor>, shares: u8, threshold: u8) -> Self {
+//         Self {
+//             participants, shares, threshold,
+//         }
+//     }
+
+//     /// the main distributed key generation algorithm
+//     /// each member of the society generates shares and distributes them
+//     /// 
+//     /// * `rng`: the random number generator
+//     /// 
+//     fn dkg(&self) {
+//         for p in self.participants.iter() {
+//             p.calculate_shares(self.shares);
+//         }
+//     }
+
+//     /// combine pubkeys to get a group public key
+//     /// 
+//     /// `generator`: The generator to be used to calculate a public key
+//     ///
+//     fn derive_pubkey(&self, h1: G1, h2: G2) -> G2  {
+//         // get a pubkey from each actor (in G2)
+//         let pubkeys = self.participants.iter().map(|p| {
+//             p.derive_pubkey(h1, h2)
+//         }).collect::<Vec<_>>();
+//         // using second returned val since we want the pubkey in G2
+//         let mut mpk = pubkeys[0].g2;
+//         // instead of adding, should we be calculating the elliptic curve pairings? 
+//         for i in 1..pubkeys.len() - 1 {
+//             mpk = mpk + pubkeys[i].g2
+//         }
+//         mpk
+//     }
+
+//     fn derive_secret_keys(&self) -> Vec<Fr> {
+//         self.participants.iter().map(|p| {
+//             p.secret()
+//         }).collect::<Vec<_>>()
+//     }
+// }
+
+// #[derive(Clone)]
+// pub struct Actor {
+//     pub slot: u64,
+//     // TODO: should this be over Fq or Fr?
+//     pub poly: DensePolynomial<Fr>,
+//     /// the generator for G1
+//     pub g1: G1,
+//     /// the generator for G2
+//     pub g2: G2,
+// }
+
+// impl Actor {
+//     /// create a new actor with a threshold value and a random polynomial with degree = threshold
+//     /// over the given scalar field
+//     /// 
+//     /// * `t`: the thresold value to set. This will be the 'threshold' in the TSS scheme
+//     /// * `r`: The random number generator used to generate the polynomial
+//     /// 
+//     pub fn new<R: Rng + Sized>(slot: u64, g1: G1, g2: G2, t: u8, mut rng: R) -> Actor {
+//         // generate secret and coefficients
+//         let rand_poly = DensePolynomial::<Fr>::rand(t as usize, &mut rng);
+//         Self {
+//             slot: slot,
+//             poly: rand_poly,
+//             g1: g1,
+//             g2: g2,
+//         }
+//     }
+
+//     /// Calculate secret shares for the secret polynomial
+//     /// The shares can then be encrypted + distributed
+//     /// 
+//     /// * n: The number of shares to calculate: {f(1), ..., f(n)}
+//     /// 
+//     pub fn calculate_shares(&self, n: u8) -> Vec<(Fr, G2)> {
+//         (1..n+1).map(|k| {
+//             // don't calculate '0'th share because that's the secret
+//             let secret_share = self.poly.clone().evaluate(&<Fr>::from(k));
+//             // calculate commitment 
+//             let c = self.g2.mul(secret_share);
+//             (secret_share, c) 
+//         }).collect::<Vec<_>>()
+//     }
+
+//     /// derive the public key based on the derived secret f(0)
+//     /// over both G1 and G2
+//     /// 
+//     /// `h1`: A generator for G1
+//     /// `h2`: A generator for G2
+//     /// 
+//     pub fn derive_pubkey(&self, h1: G1, h2: G2) -> PublicKey {
+//         let sk = self.secret();
+//         PublicKey { 
+//             g1: h1.mul(sk), 
+//             g2: h2.mul(sk) 
+//         }
+//     }
+
+//     /// calculate the actor's secret key
+//     /// it is the secret polynomial evaluated at 0
+//     pub fn secret(&self) -> Fr {
+//         self.poly.clone().evaluate(&<Fr>::from(0u64))
+//     }
+
+// }
