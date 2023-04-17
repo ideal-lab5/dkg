@@ -34,7 +34,7 @@ export function thresholdDecrypt(r2, ciphertextBlob, sk) {
 
 // a very basic example
 function basicExample() {
-    // bytes for the coefficients of a randomn polynomial
+    // bytes for the coefficients of a random polynomial
     let coeffsBlob = keygen(23, 2);
     console.log('generated serialized secret poly: ' + coeffsBlob);
     // now derive a secret key
