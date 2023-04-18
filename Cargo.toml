@@ -2,7 +2,7 @@ cargo-features = ["edition2021"]
 
 [package]
 name = "dkg"
-version = "1.0.0"
+version = "1.0.0-dev"
 authors = [
     "tony riemer <driemworks@idealabs.network>"
 ]
@@ -14,6 +14,10 @@ repository = "https://github.com/driemworks/dkg"
 description = "DKG PoC using arkworks."
 edition = "2021"
 
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
 [lib]
 crate-type = ["cdylib"]
 
@@ -21,25 +25,30 @@ crate-type = ["cdylib"]
 wasm-opt = false
 
 [dependencies]
-bincode = "1.0"
-serde = { version = "1.0.130", features = ["derive"] }
-serde-wasm-bindgen = "0.4"
-wasm-bindgen = "0.2"
-rand = "0.7.3"
-byteorder = "1.4.3"
-num-bigint = "0.4.3"
-sha2 = "0.10.6"
-rand_chacha = { version = "0.3.1", default-features = false }
+serde = { version = "1.0.160", features = ["derive"]}
+serde-wasm-bindgen = { version = "0.4", default-features = false}
+wasm-bindgen = { version = "0.2", default-features = false}
+sha2 = { version = "0.10.6", default-features = false}
 
+num-bigint = { version = "0.4.3", default-features = false }
+rand_chacha = { version = "0.3.1", default-features = false }
 # arkworks dependencies
 ark-std = { version = "0.4.0", default-features = false }
 ark-ff = { version = "0.4.0", default-features = false }
-ark-poly = { version = "0.4.0", default-features = false, features = ["parallel"] }
+ark-poly = { version = "0.4.0", default-features = false }
 ark-ec = { version = "0.4.0", default-features = false }
 ark-serialize = { version = "0.4.0", default-features = false }
-ark-bls12-381 = "0.4.0"
-ark-crypto-primitives = { version = "0.4.0", default-features = false, features = ["encryption"] }
+ark-bls12-381 = { version = "0.4.0", features = ["curve"], default-features = false }
 
 [features]
 default = ["std"]
-std = []
+std = [
+    "num-bigint/std",
+    "rand_chacha/std",
+    "ark-std/std",
+    "ark-ff/std",
+    "ark-ec/std",
+    "ark-poly/std",
+    "ark-serialize/std",
+    "ark-bls12-381/std"
+]
