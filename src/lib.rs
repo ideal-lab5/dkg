@@ -1,3 +1,4 @@
+// #![cfg_attr(not(feature = "std"), no_std)]
 #![no_std]
 
 use ark_ec::{
@@ -32,6 +33,18 @@ use serde::{
     de::{ Deserializer }
 };
 use wasm_bindgen::prelude::*;
+
+use ark_std::vec::Vec;
+// #[cfg(not(feature = "std"))]
+// pub mod no_std {
+//     use ark_std::vec::Vec;
+// }
+
+// #[cfg(feature = "std")]
+// pub mod with_std {
+//     use std::vec::Vec;
+
+// }
 
 #[cfg(test)]
 mod test;
