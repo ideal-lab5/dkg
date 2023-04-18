@@ -39,9 +39,19 @@ ark-ff = { version = "0.4.0", default-features = false }
 ark-poly = { version = "0.4.0", default-features = false, features = ["parallel"] }
 ark-ec = { version = "0.4.0", default-features = false }
 ark-serialize = { version = "0.4.0", default-features = false }
-ark-bls12-381 = "0.4.0"
-ark-crypto-primitives = { version = "0.4.0", default-features = false, features = ["encryption"] }
+# sp-ark-bls12-381 = { version = "0.4.0", features = ["curve"], default-features = false }
+ark-bls12-381 = { version = "0.4.0", features = ["curve"], default-features = false }
+
+# [dev-dependencies]
+# ark-bls12-381 = "0.4.0"
 
 [features]
 default = ["std"]
-std = []
+std = [
+    "ark-std/std",
+    "ark-ff/std",
+    "ark-ec/std",
+    "ark-poly/std",
+    "ark-serialize/std",
+    "ark-bls12-381/std"
+]
