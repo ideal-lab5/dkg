@@ -51,7 +51,7 @@ mod test;
 
 #[derive(Serialize, Deserialize)]
 pub struct Share {
-    pub share: Vec<u8>,
+    pub share: ark_std::vec::Vec<u8>,
     pub commitment: Vec<u8>,
 }
 
