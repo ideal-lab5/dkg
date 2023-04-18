@@ -143,10 +143,16 @@ pub fn w_calculate_pubkey(
     secret: JsValue
 ) -> Result<JsValue, serde_wasm_bindgen::Error> {
     // the secret key is encoded as big endian
-    let sk_be : Vec<u8> = serde_wasm_bindgen::from_value(secret).unwrap();
+    let sk_be : Vec<u8> = serde_wasm_bindgen::from_value(secret)?;
     let pk = s_calculate_pubkey(r1, r2, sk_be);
     serde_wasm_bindgen::to_value(&pk)
 }
+
+// #[wasm_bindgen]
+// pub fn w_verify_pubkey(pubkey_bytes: JsValue) -> Result<JsValue, serde_wasm_bindgen::Error> {
+//     let pk = serde_wasm_bindgen::from_value(pubkey_bytes)?;
+
+// }
 
 #[wasm_bindgen]
 pub fn w_calculate_shares(
