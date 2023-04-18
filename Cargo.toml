@@ -39,3 +39,7 @@ ark-ec = { version = "0.4.0", default-features = false }
 ark-serialize = { version = "0.4.0", default-features = false }
 ark-bls12-381 = "0.4.0"
 ark-crypto-primitives = { version = "0.4.0", default-features = false, features = ["encryption"] }
+
+[features]
+default = ["std"]
+std = []
