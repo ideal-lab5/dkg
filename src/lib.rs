@@ -1,11 +1,10 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-// #![no_std]
 
 use ark_ec::{
     AffineRepr, Group, CurveGroup,
     pairing::Pairing,
 };
-use ark_ff::{Field, PrimeField, UniformRand};
+use ark_ff::UniformRand;
 use ark_poly::{
     polynomial::univariate::DensePolynomial,
     DenseUVPolynomial, Polynomial,
