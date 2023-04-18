@@ -2,7 +2,7 @@ cargo-features = ["edition2021"]
 
 [package]
 name = "dkg"
-version = "1.0.0"
+version = "1.0.0-dev"
 authors = [
     "tony riemer <driemworks@idealabs.network>"
 ]
