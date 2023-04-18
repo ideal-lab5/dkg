@@ -1,5 +1,5 @@
-// #![cfg_attr(not(feature = "std"), no_std)]
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
+// #![no_std]
 
 use ark_ec::{
     AffineRepr, Group, CurveGroup,
@@ -35,23 +35,13 @@ use serde::{
 use wasm_bindgen::prelude::*;
 
 use ark_std::vec::Vec;
-// #[cfg(not(feature = "std"))]
-// pub mod no_std {
-//     use ark_std::vec::Vec;
-// }
-
-// #[cfg(feature = "std")]
-// pub mod with_std {
-//     use std::vec::Vec;
-
-// }
 
 #[cfg(test)]
 mod test;
 
 #[derive(Serialize, Deserialize)]
 pub struct Share {
-    pub share: ark_std::vec::Vec<u8>,
+    pub share: Vec<u8>,
     pub commitment: Vec<u8>,
 }
 
