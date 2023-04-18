@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 use ark_ec::{
     AffineRepr, Group, CurveGroup,
     pairing::Pairing,
