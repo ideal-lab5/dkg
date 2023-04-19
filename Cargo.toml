@@ -1,5 +1,3 @@
-cargo-features = ["edition2021"]
-
 [package]
 name = "dkg"
 version = "1.0.0-dev"
@@ -7,31 +5,44 @@ authors = [
     "tony riemer <driemworks@idealabs.network>"
 ]
 categories = ["cryptography"]
-keywords = ["pairing", "threshold", "dkg", "secret-sharing"]
+keywords = ["pairing", "threshold", "distributed-key-generator", "secret-sharing"]
 license = "GPL-3.0"
 readme = "README.md"
 repository = "https://github.com/driemworks/dkg"
 description = "DKG PoC using arkworks."
 edition = "2021"
 
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = [
+    # "cdylib", 
+    "lib",
+]
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
 
 [dependencies]
-serde = { version = "1.0.160", features = ["derive"]}
-serde-wasm-bindgen = { version = "0.4", default-features = false}
-wasm-bindgen = { version = "0.2", default-features = false}
-sha2 = { version = "0.10.6", default-features = false}
+# serde = { version = "1.0.160", default-features = false, features = ["derive"], optional = true}
+# serde = { version = "1.0", default-features = false, features = ["derive"], optional = true }
+# for wasm build
+# serde-wasm-bindgen = { version = "0.4", default-features = false}
+# wasm-bindgen = { version = "0.2", default-features = false}
+
+# [target.'cfg(not(target_env = "msvc"))'.dependencies]
+# jemallocator = "0.3.2"
 
 num-bigint = { version = "0.4.3", default-features = false }
 rand_chacha = { version = "0.3.1", default-features = false }
+sha2 = { version = "0.10.6", default-features = false}
 # arkworks dependencies
 ark-std = { version = "0.4.0", default-features = false }
 ark-ff = { version = "0.4.0", default-features = false }
@@ -43,12 +54,13 @@ ark-bls12-381 = { version = "0.4.0", features = ["curve"], default-features = fa
 [features]
 default = ["std"]
 std = [
-    "num-bigint/std",
-    "rand_chacha/std",
-    "ark-std/std",
-    "ark-ff/std",
-    "ark-ec/std",
-    "ark-poly/std",
-    "ark-serialize/std",
-    "ark-bls12-381/std"
+    # "serde",
+    # "num-bigint/std",
+    # "rand_chacha/std",
+    # "ark-std/std",
+    # "ark-ff/std",
+    # "ark-ec/std",
+    # "ark-poly/std",
+    # "ark-serialize/std",
+    # "ark-bls12-381/std"
 ]
