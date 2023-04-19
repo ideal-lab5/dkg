@@ -72,18 +72,3 @@ pub fn test_dkg_tss_with_serialization() {
     let recovered_message = threshold_decrypt(r2, ct, ssk);
     assert_eq!(message_digest, recovered_message);
 }
-
-// #[test]
-// pub fn can_calculate_and_verify_shares() {
-//     let t = 2;
-//     let n = 3;
-//     let g1 = G1::generator();
-//     let g2 = G2::generator();
-//     let mut rng = ChaCha20Rng::seed_from_u64(23u64);
-
-//     let actor = Actor::new(0, g1, g2, t, rng);
-//     let shares = actor.calculate_shares(5);
-//     shares.iter().for_each(|(s, c)| {
-//         assert_eq!(g2.mul(s), *c);
-//     });
-// }

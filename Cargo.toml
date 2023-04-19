@@ -1,66 +1,34 @@
-[package]
-name = "dkg"
-version = "1.0.0-dev"
-authors = [
-    "tony riemer <driemworks@idealabs.network>"
-]
-categories = ["cryptography"]
-keywords = ["pairing", "threshold", "distributed-key-generator", "secret-sharing"]
-license = "GPL-3.0"
-readme = "README.md"
-repository = "https://github.com/driemworks/dkg"
-description = "DKG PoC using arkworks."
-edition = "2021"
+[workspace]
 
-[profile.dev]
-panic = "abort"
+members = [
+    "dkg-core",
+    "dkg-wasm",
+]
 
 [profile.release]
-panic = "abort"
+opt-level = 3
+lto = "thin"
+incremental = true
+panic = 'abort'
 
-[package.metadata.docs.rs]
-targets = ["x86_64-unknown-linux-gnu"]
+[profile.bench]
+opt-level = 3
+debug = false
+rpath = false
+lto = "thin"
+incremental = true
+debug-assertions = false
 
-[lib]
-crate-type = [
-    # "cdylib", 
-    "lib",
-]
+[profile.dev]
+opt-level = 0
+panic = 'abort'
 
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = false
+[profile.test]
+opt-level = 3
+lto = "thin"
+incremental = true
+debug-assertions = true
+debug = true
 
-[dependencies]
-# serde = { version = "1.0.160", default-features = false, features = ["derive"], optional = true}
-# serde = { version = "1.0", default-features = false, features = ["derive"], optional = true }
-# for wasm build
-# serde-wasm-bindgen = { version = "0.4", default-features = false}
-# wasm-bindgen = { version = "0.2", default-features = false}
-
-# [target.'cfg(not(target_env = "msvc"))'.dependencies]
-# jemallocator = "0.3.2"
-
-num-bigint = { version = "0.4.3", default-features = false }
-rand_chacha = { version = "0.3.1", default-features = false }
-sha2 = { version = "0.10.6", default-features = false}
-# arkworks dependencies
-ark-std = { version = "0.4.0", default-features = false }
-ark-ff = { version = "0.4.0", default-features = false }
-ark-poly = { version = "0.4.0", default-features = false }
-ark-ec = { version = "0.4.0", default-features = false }
-ark-serialize = { version = "0.4.0", default-features = false }
-ark-bls12-381 = { version = "0.4.0", features = ["curve"], default-features = false }
-
-[features]
-default = ["std"]
-std = [
-    # "serde",
-    # "num-bigint/std",
-    # "rand_chacha/std",
-    # "ark-std/std",
-    # "ark-ff/std",
-    # "ark-ec/std",
-    # "ark-poly/std",
-    # "ark-serialize/std",
-    # "ark-bls12-381/std"
-]
+[workspace.metadata.release]
+dependent-version = "fix"
