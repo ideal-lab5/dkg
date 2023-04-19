@@ -1,62 +1,12 @@
-# DKG/VSS 
+# DKG
 
-This is a library for threshold cryptography. Specifically, it is a verifiable secret sharing scheme intended to be used on top of a distributed network.
+This library is an implementation of the distributed key generator required for [blind DKG](TODO).
 
 ## Overview
 
-This is an implementation of the DKG and VSS scheme required for [Blind DKG]().
+[dkg-core](./dkg-core/): supports both std and no-std. When built with std, it exposes functions that can be called from the dkg-wasm module. |
 
-### DKG
-This is a proof of concept distributed key generation protocol. Currently, it uses BLS12-381. It allows users to articipate in dkg together.
+[dkg-wasm](./dkg-wasm/): exposes wasm bindings around the dkg-core functions. Can be compiled to wasm.
 
-Expose wasm calls to:
+[examples](./examples/): examples of usage of the dkg-wasm library
 
-- derive secret polynomials (includes secret key)
-- verify shares
-- encrypt/decrypt shares
-- encrypt messages
-- decrypt ciphertext
-
-## Installation
-
-build with 
-
-``` bash
-cargo build
-```
-
-run the dkg example with
-
-``` bash
-cargo run
-```
-
-## Compiling wasm build
-
-From the root directory
-``` bash
-cd dkg
-# build
-wasm-pack build --target web
-wasm-pack build --target bundler
-# link to npm repo
-cd pkg
-npm link
-```
-
-Then, 
-
-``` bash
-# either enable legacy openssl or downgrade to node v16
-export NODE_OPTIONS=--openssl-legacy-provider
-cd example
-npm link dkg
-npm install
-npm run serve
-```
-<!-- https://www.joshfinnie.com/blog/using-webassembly-created-in-rust-for-fast-react-components/ -->
-Open the application at http://localhost:8080
-
-    // "build:wasm": "cargo build --target wasm32-unknown-unknown",
-    // "build:bindgen": "wasm-bindgen '../target/wasm32-unknown-unknown/debug/dkg.wasm' --out-dir build",
-    // "build": "npm run build:wasm && npm run build:bindgen && npx webpack"
