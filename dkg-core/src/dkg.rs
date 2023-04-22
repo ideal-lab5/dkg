@@ -5,10 +5,6 @@
 //! to perform (blind) dkg. This module supports both std and no-std compilation.
 //! 
 //!
-
-#[cfg(test)]
-mod test;
-
 use ark_ec::{
     AffineRepr, CurveGroup,
     pairing::Pairing,
@@ -22,6 +18,7 @@ use ark_serialize::CanonicalSerialize;
 use ark_std::{
     ops::Mul,
     rand::Rng,
+    Zero,
 };
 use sha2::Digest;
 
@@ -61,19 +58,38 @@ pub fn calculate_pubkey(h1: G1, h2: G2, sk: Fr) -> PublicKey {
     }
 }
 
+/// to verify a share we g^(share) and check if it equals the commitment
+pub fn verify_share(
+    g2: G2, 
+    share: Fr, 
+    commitment: G2
+) -> bool {
+    let verify = g2.mul(share);
+    verify.eq(&commitment)
+}
+
 /// calculate shares and commitments {(f(i), g2^f(i))} for i in [n]
 ///
 /// * `n`: The number of shares to calculate
 /// * `g2`: A generator of G2 (progective)
 /// * `poly`: A polynomial over Fr
 /// 
-pub fn calculate_shares(n: u8, g2: G2, poly: DensePolynomial<Fr>) -> Vec<(Fr, G2)> {
+pub fn calculate_shares_and_commitments(
+    t: u8, n: u8, g2: G2, poly: DensePolynomial<Fr>
+) -> Vec<(Fr, G2)> {
+    // first calculate all commitments
+    let c: G2 = poly.coeffs.iter()
+            .map(|coeff| g2.mul(coeff))
+            .fold(G2::zero(), |a, b| a + b);
     (1..n+1).map(|k| {
         // don't calculate '0'th share because that's the secret
         let secret_share = poly.clone().evaluate(&<Fr>::from(k)); 
-        // calculate commitment 
-        let c = g2.mul(secret_share);
-        (secret_share, c) 
+        // calculate commitment for the share
+        // c_0 * c_1 x * ... * c_t x^t = C_0 * ... * C_t * x^{t(t+1)/2}
+        // let x = (k as u64)^(t * (t+1) / 2) as u64;
+        // let commitment = c.mul(Fr::from(x));
+        let commitment = g2.mul(secret_share);
+        (secret_share, commitment) 
     }).collect::<Vec<_>>()
 }
 
@@ -118,7 +134,7 @@ pub fn encrypt<R: Rng + Sized>(
     Ciphertext { u, v, w }
 }
 
-/// decrypts a message using the provided key shares
+/// decrypts a message using the provided key
 pub fn decrypt(
     ct: Vec<u8>, 
     sk: G1, 
@@ -159,5 +175,80 @@ fn hash_to_g2(b: &[u8]) -> G2Affine {
             }
             None => nonce += 1,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use rand_chacha::{
+        ChaCha20Rng,
+        rand_core::SeedableRng,
+    };
+    use ark_ec::Group;
+
+    pub fn slice_to_array_32(slice: &[u8]) -> Option<&[u8; 32]> {
+        if slice.len() == 32 {
+            let ptr = slice.as_ptr() as *const [u8; 32];
+            unsafe {Some(&*ptr)}
+        } else {
+            None
+        }
+    }
+
+    #[test]
+    pub fn test_dkg_tss() {
+        let t = 2;
+        let n = 3;
+        let g1 = G1::generator();
+        let g2 = G2::generator();
+        let r1 = 89430;
+        let r2 = 110458345;
+        let h1 = G1::generator().mul(Fr::from(r1));
+        let h2 = G2::generator().mul(Fr::from(r2));
+
+        let mut rng = ChaCha20Rng::seed_from_u64(23u64);
+        let mut keys: Vec<(Fr, PublicKey)> = Vec::new();
+        // in this simplified version:
+        // this maps: (idx ~ participant) -> (shares + commitments)
+        // so later on to simulate 'distribution + verification', a node 'k' would get all 
+        // items shares[i][k] for all i
+        let mut shares: Vec<Vec<(Fr, G2)>> = Vec::new();
+        for i in 0..n-1 {
+            let poly = keygen(2, rng.clone());
+            let sk = calculate_secret(poly.clone());
+            let pk = calculate_pubkey(h1, h2, sk);
+            keys.push((sk, pk));
+            let shares_and_commitments = 
+                calculate_shares_and_commitments(
+                    t, n, g2, poly.clone(),
+                );
+            shares.push(shares_and_commitments);
+        }
+
+        // now simulate verification of shares
+        for i in 0..n-1 {
+            for k in 0..n-1 {
+                let share = shares[i as usize]
+                    [k as usize].0;
+                let commitment = shares[i as usize][k as usize].1;
+                let verify = verify_share(g2, share, commitment);
+                assert_eq!(true, verify);
+            }
+        }
+
+        // calculate shared pubkey
+        let mut ssk: Fr = keys[0].0.clone();
+        let mut spk: PublicKey = keys[0].1.clone();
+        let big_s: num_bigint::BigUint = ssk.into();
+        for i in 1..n-1 {
+            ssk = combine_secrets(ssk, keys[i as usize].0.clone());
+            spk = combine_pubkeys(spk, keys[i as usize].1.clone());
+        }
+        let message_digest = sha256(b"hello world");
+        let m = slice_to_array_32(&message_digest).unwrap();
+        let ct = encrypt(m, h1, spk.g2, &mut rng.clone());
+        let recovered = decrypt(ct.v, ct.u.mul(ssk), h2);
+        assert_eq!(message_digest, recovered);
     }
 }

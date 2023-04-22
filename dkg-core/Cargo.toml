@@ -28,7 +28,12 @@ crate-type = ["lib"]
 wasm-opt = false
 
 [dependencies]
+# for std serialization
 serde = { version = "1.0.160", default-features = false, features = ["derive"], optional = true}
+# for no-std serialization 
+codec = { package = "parity-scale-codec", version = "3.2.2", default-features = false, features = [
+	"derive",
+] }
 # for wasm build
 serde-wasm-bindgen = { version = "0.4", default-features = false}
 wasm-bindgen = { version = "0.2", default-features = false}

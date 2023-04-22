@@ -1,13 +1,10 @@
 # WASM DKG with plain JS + Webpack
 
-wasm wrappers for the dkg core library, allows for use within the browser
+Wasm bindings for the [dkg-core](https://github.com/ideal-lab5/dkg/tree/main/dkg-core) library.
 
 ## Build
 
-First build the dkg lib and the wasm. From the [dkg-wasm](../dkg-wasm/) directory, run:
-
 ``` bash
 cargo build
-# we to build for bundler when using vanilla js/webpack
-wasm-pack build --target bundler
+wasm-pack build --target web
 ```

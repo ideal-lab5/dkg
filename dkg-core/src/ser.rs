@@ -112,10 +112,14 @@ pub fn s_calculate_secret(be_poly: BEPoly) -> Vec<u8> {
     big_secret.to_bytes_be()
 }
 
-pub fn s_calculate_shares(n: u8, coeffs: Vec<Fr>) -> JsValue {
+pub fn s_calculate_shares(
+    t: u8, 
+    n: u8, 
+    coeffs: Vec<Fr>,
+) -> Vec<Share> {
     let h2 = G2::generator();
     let f = DensePolynomial::<Fr>::from_coefficients_vec(coeffs);
-    let shares: Vec<(Fr, G2)> = dkg::calculate_shares(n, h2, f);
+    let shares: Vec<(Fr, G2)> = dkg::calculate_shares_and_commitments(t, n, h2, f);
     let serializable_shares: Vec<Share> = shares.iter().map(|(s, c)| {
         let big_s: num_bigint::BigUint = Fr::into(*s);
         let bytes_be_s = big_s.to_bytes_be();
@@ -127,14 +131,16 @@ pub fn s_calculate_shares(n: u8, coeffs: Vec<Fr>) -> JsValue {
             commitment: commitments_bytes,
         }
     }).collect::<Vec<_>>();
-
-    // bincode::serialize(&serializable_shares).unwrap()
-    serde_wasm_bindgen::to_value(&serializable_shares).unwrap()
+    serializable_shares
 }
 
 /// calculate the public key in G1 and G2 for a given secret
 /// the secret should be encoded as big endian
-pub fn s_calculate_pubkey(r1: u64, r2: u64, secret_be: Vec<u8>) -> SerializablePublicKey {
+pub fn s_calculate_pubkey(
+    r1: u64, 
+    r2: u64, 
+    secret_be: Vec<u8>,
+) -> SerializablePublicKey {
     // try recover secret
     let big_secret: num_bigint::BigUint = num_bigint::BigUint::from_bytes_be(&secret_be);
     let sk = Fr::from(big_secret);
@@ -156,7 +162,10 @@ pub fn s_calculate_pubkey(r1: u64, r2: u64, secret_be: Vec<u8>) -> SerializableP
 }
 
 /// will give the master pubkey in G2 only
-pub fn s_combine_pubkeys(pk1: SerializablePublicKey, pk2: SerializablePublicKey) -> SerializablePublicKey {
+pub fn s_combine_pubkeys(
+    pk1: SerializablePublicKey,
+    pk2: SerializablePublicKey
+) -> SerializablePublicKey {
     let pubkey1 = PublicKey {
         g1: G1::deserialize_compressed(&pk1.g1[..]).unwrap(),
         g2: G2::deserialize_compressed(&pk1.g2[..]).unwrap(),
@@ -180,7 +189,25 @@ pub fn s_combine_pubkeys(pk1: SerializablePublicKey, pk2: SerializablePublicKey)
     }
 }
 
-pub fn s_combine_secrets(s1: Vec<u8>, s2: Vec<u8>) -> Vec<u8> {
+pub fn s_verify_share(
+    r2: u64,
+    share_be: Vec<u8>, 
+    raw_commitment: Vec<u8>,
+) -> bool {
+    // recover the generator
+    // let g2 = G2::deserialize_compressed(&generator[..]).unwrap();
+    let g2 = G2::generator().mul(Fr::from(r2 as u64));
+    // recover the share
+    let big_share = num_bigint::BigUint::from_bytes_be(&share_be);
+    let share = Fr::from(big_share);
+    // recover the commitment
+    let commitment = G2::deserialize_compressed(&raw_commitment[..]).unwrap();
+    dkg::verify_share(g2, share, commitment)
+}
+
+pub fn s_combine_secrets(
+    s1: Vec<u8>, s2: Vec<u8>
+) -> Vec<u8> {
     // each secret is encoded as big endian
     let big_s1 = num_bigint::BigUint::from_bytes_be(&s1);
     let big_s2 = num_bigint::BigUint::from_bytes_be(&s2);
@@ -234,3 +261,51 @@ pub fn slice_to_array_32(slice: &[u8]) -> Option<&[u8; 32]> {
         None
     }
 }
+
+// use rand_chacha::{
+// 	ChaCha20Rng,
+// 	rand_core::SeedableRng,
+// };
+// #[cfg(test)]
+// pub mod test {
+//     use super::*;
+//     use sha2::Digest;
+
+//     fn sha256(b: &[u8]) -> Vec<u8> {
+//         let mut hasher = sha2::Sha256::new();
+//         hasher.update(b);
+//         hasher.finalize().to_vec()
+//     }
+
+//     #[test]
+//     pub fn test_dkg_tss_with_serialization() {
+//         let t = 2;
+//         let n = 3;
+//         let g1 = G1::generator();
+//         let g2 = G2::generator();
+//         let r1 = 89430;
+//         let r2 = 110458345;
+//         let seed = 23u64;
+
+//         let mut keys: Vec<(Vec<u8>, SerializablePublicKey)> = Vec::new();
+//         for i in 1..n {
+//             // keygen: Q: how can we verify this was serialized properly when randomly generated?
+//             let be_poly = s_keygen(seed, t);
+//             // calculate secret
+//             let secret = s_calculate_secret(be_poly.clone());        
+//             let pubkey = s_calculate_pubkey(r1, r2, secret.clone());
+//             keys.push((secret.clone(), pubkey.clone()));
+//         }
+//         // // compute shared pubkey and secretkey
+//         let mut spk = keys[0].1.clone();
+//         let mut ssk = keys[0].0.clone();
+//         for i in 1..n-1 {
+//             spk = s_combine_pubkeys(spk, keys[i].1.clone());
+//             ssk = s_combine_secrets(ssk, keys[i].0.clone())
+//         }
+//         let message_digest = sha256(b"Hello, world!");
+//         let ct = s_encrypt(23u64, r1, message_digest.clone(), spk);
+//         let recovered_message = threshold_decrypt(r2, ct, ssk);
+//         assert_eq!(message_digest, recovered_message);
+//     }
+// }

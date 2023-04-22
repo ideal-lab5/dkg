@@ -12,8 +12,8 @@ export function calculatePublicKey(r1, r2, secret) {
     return wasm.w_calculate_pubkey(BigInt(r1), BigInt(r2), secret);
 }
 
-export function calculateShares(shares, coeffsBlob) {
-    return wasm.w_calculate_shares(shares, coeffsBlob);
+export function calculateShares(threshold, shares, coeffsBlob) {
+    return wasm.w_calculate_shares(threshold, shares, coeffsBlob);
 }
 
 export function combinePubkeys(pk1, pk2) {
@@ -22,6 +22,10 @@ export function combinePubkeys(pk1, pk2) {
 
 export function combineSecrets(s1, s2) {
     return wasm.w_combine_secrets(s1, s2);
+}
+
+export function verifyShare(r2, share, commitment) {
+    return wasm.w_verify_share(BigInt(r2), share, commitment);
 }
 
 export function thresholdEncrypt(seed, r1, message, pk) {
@@ -49,16 +53,19 @@ function basicExample() {
 }
 
 // an example dkg using the wasm bindings
-function dkgExample() {
+function dkgSimulation() {
     let n = 3;
     let t = 2;
     let seed = 23;
+    // todo: verify generator?
     let r1 = 89430;
-    let r2 = 110458345;
+    let r2 = 110445;
     // for each participant in the protocol
     // each shareholder generates shares for its polynomial
     let secrets = [];
     let pubkeys = [];
+    // this is a map of index -> array(share, commitment)
+    let shares = [];
     Array(n).fill(0).map((_, i) => {
         let rand_poly = keygen(seed, t);
         console.log(JSON.stringify(rand_poly.coeffs));
@@ -66,6 +73,18 @@ function dkgExample() {
         secrets.push(secret);
         let pubkey = calculatePublicKey(r1, r2, secret)
         pubkeys.push(pubkey);
+        // calculate shares
+        let sharesAndCommitments = calculateShares(t, n, rand_poly.coeffs);
+        shares.push(sharesAndCommitments);
+    });
+
+    // each particpant verifies their shares received
+    Array(n).fill(0).map((_, i) => {
+        let myShares = shares[i];
+        myShares.forEach(item => {
+            console.log('share validity ' + 
+                verifyShare(r2, item.share, item.commitment));
+        });
     });
 
     // now we want to calculate the master public key
@@ -88,5 +107,5 @@ function dkgExample() {
     console.log('original: ' + message);
 }
 
-dkgExample();
+dkgSimulation();
 // basicExample();
