@@ -20,6 +20,15 @@ use ark_std::{
     rand::Rng,
     Zero,
 };
+use ark_crypto_primitives::{
+    Error as CryptoPrimitivesError,
+    signature::{
+        schnorr,
+        schnorr::Signature,
+        SignatureScheme,
+    },
+};
+use blake2::Blake2s256 as Blake2s;
 use sha2::Digest;
 
 use ark_bls12_381::{
@@ -36,7 +45,10 @@ use ark_std::vec::Vec;
 use std::vec::Vec;
 
 /// generate a new random polynomial over the field Fr
-pub fn keygen<R: Rng + Sized>(t: usize, mut rng: R) -> DensePolynomial<Fr> {
+pub fn keygen<R: Rng + Sized>(
+    t: usize,
+    mut rng: R
+) -> DensePolynomial<Fr> {
     DensePolynomial::<Fr>::rand(t as usize, &mut rng)
 }
 
@@ -75,7 +87,10 @@ pub fn verify_share(
 /// * `poly`: A polynomial over Fr
 /// 
 pub fn calculate_shares_and_commitments(
-    t: u8, n: u8, g2: G2, poly: DensePolynomial<Fr>
+    t: u8, 
+    n: u8, 
+    g2: G2, 
+    poly: DensePolynomial<Fr>,
 ) -> Vec<(Fr, G2)> {
     // first calculate all commitments
     let c: G2 = poly.coeffs.iter()
@@ -105,6 +120,23 @@ pub fn combine_pubkeys(pk1: PublicKey, pk2: PublicKey) -> PublicKey {
 pub fn combine_secrets(sk1: Fr, sk2: Fr) -> Fr {
     sk1 + sk2
 }
+
+/// signature with BLS12-381 secret 
+pub fn sign<R: Rng + Sized>(
+    message: &[u8],
+    sk: schnorr::SecretKey<G1>,
+    mut rng: R,
+) -> Result<Signature<G1>, CryptoPrimitivesError> {
+    // let s: schnorr::SecretKey<G1> = schnorr::SecretKey(sk);
+    let parameters = schnorr::Schnorr::<G1, Blake2s>::setup::<_>(&mut rng).unwrap();
+    schnorr::Schnorr::<G1, Blake2s>::sign(
+        &parameters, &sk, &message, &mut rng
+    )
+}
+
+// pub fn generic_verify() {
+
+// }
 
 /// encrypts the message to a given public key
 pub fn encrypt<R: Rng + Sized>(
