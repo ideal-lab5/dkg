@@ -10,7 +10,8 @@ use ark_bls12_381::{
 };
 use ark_poly::{DenseUVPolynomial, univariate::DensePolynomial};
 use rand_chacha::{
-    ChaCha20Rng, rand_core::SeedableRng,
+    ChaCha20Rng, 
+    rand_core::SeedableRng,
 };
 use serde::{
     Serialize, Deserialize, 
@@ -20,11 +21,21 @@ use serde::{
     },
     de::{ Deserializer }
 };
+use ark_crypto_primitives::{
+    Error as CryptoPrimitivesError,
+    signature::{
+        schnorr,
+        schnorr::{Parameters, Signature},
+        SignatureScheme,
+    },
+};
+use blake2::Blake2s256 as Blake2s;
+
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use ark_std::{
     ops::Mul,
+    rand::RngCore,
 };
-use wasm_bindgen::JsValue;
 use crate::types::*;
 
 
@@ -97,6 +108,22 @@ pub struct SerializableCiphertext {
     pub v: Vec<u8>,
     /// the verification key
     pub w: Vec<u8>,
+}
+
+/// a serializable version of 
+/// ark_crypto_primitives::schnorr::Signature
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SerializableSignature {
+    pub prover_response:  Vec<u8>,
+    pub verifier_challenge: Vec<u8>,
+}
+
+/// a serializable version of 
+/// ark_crypto_primitives::schnorr::Parameters
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SerializableParameters {
+    pub generator: Vec<u8>,
+    pub salt: [u8;32],
 }
 
 pub fn s_keygen(seed: u64, threshold: u8) -> BEPoly {
@@ -178,10 +205,10 @@ pub fn s_combine_pubkeys(
 
     let sum = dkg::combine_pubkeys(pubkey1, pubkey2);
 
-    let mut g1_bytes = Vec::with_capacity(1000);
+    let mut g1_bytes = Vec::new();
     sum.g1.serialize_compressed(&mut g1_bytes).unwrap();
 
-    let mut g2_bytes = Vec::with_capacity(1000);
+    let mut g2_bytes = Vec::new();
     sum.g2.serialize_compressed(&mut g2_bytes).unwrap();
     SerializablePublicKey {
         g1: g1_bytes,
@@ -219,15 +246,92 @@ pub fn s_combine_secrets(
     big_x.to_bytes_be()
 }
 
-pub fn s_encrypt(seed: u64, r1: u64, msg: Vec<u8>, pk: SerializablePublicKey) -> SerializableCiphertext {
+pub fn s_signature_setup(
+    seed: u64,
+    r1: u64,
+) -> SerializableParameters {
+    let mut rng = ChaCha20Rng::seed_from_u64(seed);
+    let g1 = G1::generator().mul(Fr::from(r1));
+    let mut salt = [0u8; 32];
+    rng.fill_bytes(&mut salt);
+
+    let mut s_generator = Vec::new();
+    g1.serialize_compressed(&mut s_generator).unwrap();
+    SerializableParameters {
+        generator: s_generator,
+        salt: salt,
+    }
+}
+
+pub fn s_sign(
+    seed: u64,
+    message: Vec<u8>,
+    secret_key: Vec<u8>,
+    parameters: SerializableParameters,
+) -> SerializableSignature {
+    let mut rng = ChaCha20Rng::seed_from_u64(seed);
+    let big_sk = num_bigint::BigUint::from_bytes_be(&secret_key);
+    let sk = Fr::from(big_sk);
+    let x = schnorr::SecretKey::<G1>(sk);
+    let generator = G1::deserialize_compressed(&parameters.generator[..]).unwrap();
+    // since _hash is a private field... we'll create it this way for now
+    // will probably need to modify the implementation later
+    let mut params = schnorr::Schnorr::<G1, Blake2s>::setup::<_>(&mut rng).unwrap();
+    params.generator = generator.into();
+    params.salt = parameters.salt;
+    let sig = dkg::sign(&message, x, params, &mut rng).unwrap();
+
+    let big_pr: num_bigint::BigUint = sig.prover_response.into();
+    let big_vc: num_bigint::BigUint = sig.verifier_challenge.into();
+
+    SerializableSignature {
+        prover_response: big_pr.to_bytes_be(),
+        verifier_challenge: big_vc.to_bytes_be(),
+    }
+}
+
+pub fn s_verify(
+    seed: u64,
+    message: Vec<u8>,
+    public_key: SerializablePublicKey,
+    signature: SerializableSignature,
+    parameters: SerializableParameters,
+) -> bool {
+    let mut rng = ChaCha20Rng::seed_from_u64(seed);
+    // deserialize publickey (g1)
+    let pk = G1::deserialize_compressed(&public_key.g1[..]).unwrap();
+    // deserialize signature
+    let big_pr = num_bigint::BigUint::from_bytes_be(&signature.prover_response);
+    let big_vc = num_bigint::BigUint::from_bytes_be(&signature.verifier_challenge);
+    let sig: Signature<G1> = Signature {
+        prover_response: Fr::from(big_pr),
+        verifier_challenge: Fr::from(big_vc),
+    };
+    // deserialize parameters
+    let generator = G1::deserialize_compressed(&parameters.generator[..]).unwrap();
+    // since _hash is a private field... we'll create it this way for now
+    // will probably need to modify the implementation later
+    let mut params = schnorr::Schnorr::<G1, Blake2s>::setup::<_>(&mut rng).unwrap();
+    params.generator = generator.into();
+    params.salt = parameters.salt;
+    // TODO: handle errors
+    dkg::verify(&message, pk.into(), sig, params, &mut rng).unwrap()
+}
+
+pub fn s_encrypt(
+    seed: u64, 
+    r1: u64, 
+    msg: Vec<u8>, 
+    pk: SerializablePublicKey
+) -> SerializableCiphertext {
     let mut rng = ChaCha20Rng::seed_from_u64(seed);
     let h1 = G1::generator().mul(Fr::from(r1));
     // let wpk: SerializablePublicKey = serde_wasm_bindgen::from_value(pk).unwrap();
     let gpk = G2::deserialize_compressed(&pk.g2[..]).unwrap();
     let m = slice_to_array_32(&msg).unwrap();
     let out = dkg::encrypt(m, h1, gpk, &mut rng);
-    let mut u_bytes = Vec::with_capacity(1000);
-    let mut v_bytes = Vec::with_capacity(1000);
+    let mut u_bytes = Vec::new();
+    let mut v_bytes = Vec::new();
     out.u.serialize_compressed(&mut u_bytes).unwrap();
     out.v.serialize_compressed(&mut v_bytes).unwrap();
     SerializableCiphertext{
@@ -266,46 +370,64 @@ pub fn slice_to_array_32(slice: &[u8]) -> Option<&[u8; 32]> {
 // 	ChaCha20Rng,
 // 	rand_core::SeedableRng,
 // };
-// #[cfg(test)]
-// pub mod test {
-//     use super::*;
-//     use sha2::Digest;
+#[cfg(test)]
+pub mod test {
+    use super::*;
+    use sha2::Digest;
 
-//     fn sha256(b: &[u8]) -> Vec<u8> {
-//         let mut hasher = sha2::Sha256::new();
-//         hasher.update(b);
-//         hasher.finalize().to_vec()
-//     }
+    fn sha256(b: &[u8]) -> Vec<u8> {
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(b);
+        hasher.finalize().to_vec()
+    }
 
-//     #[test]
-//     pub fn test_dkg_tss_with_serialization() {
-//         let t = 2;
-//         let n = 3;
-//         let g1 = G1::generator();
-//         let g2 = G2::generator();
-//         let r1 = 89430;
-//         let r2 = 110458345;
-//         let seed = 23u64;
+    #[test]
+    pub fn test_dkg_tss_with_serialization() {
+        let t = 2;
+        let n = 3;
+        let g1 = G1::generator();
+        let g2 = G2::generator();
+        let r1 = 89430;
+        let r2 = 110458345;
+        let seed = 23u64;
 
-//         let mut keys: Vec<(Vec<u8>, SerializablePublicKey)> = Vec::new();
-//         for i in 1..n {
-//             // keygen: Q: how can we verify this was serialized properly when randomly generated?
-//             let be_poly = s_keygen(seed, t);
-//             // calculate secret
-//             let secret = s_calculate_secret(be_poly.clone());        
-//             let pubkey = s_calculate_pubkey(r1, r2, secret.clone());
-//             keys.push((secret.clone(), pubkey.clone()));
-//         }
-//         // // compute shared pubkey and secretkey
-//         let mut spk = keys[0].1.clone();
-//         let mut ssk = keys[0].0.clone();
-//         for i in 1..n-1 {
-//             spk = s_combine_pubkeys(spk, keys[i].1.clone());
-//             ssk = s_combine_secrets(ssk, keys[i].0.clone())
-//         }
-//         let message_digest = sha256(b"Hello, world!");
-//         let ct = s_encrypt(23u64, r1, message_digest.clone(), spk);
-//         let recovered_message = threshold_decrypt(r2, ct, ssk);
-//         assert_eq!(message_digest, recovered_message);
-//     }
-// }
+        let mut keys: Vec<(Vec<u8>, SerializablePublicKey)> = Vec::new();
+        for i in 1..n {
+            // keygen: Q: how can we verify this was serialized properly when randomly generated?
+            let be_poly = s_keygen(seed, t);
+            // calculate secret
+            let secret = s_calculate_secret(be_poly.clone());        
+            let pubkey = s_calculate_pubkey(r1, r2, secret.clone());
+            keys.push((secret.clone(), pubkey.clone()));
+        }
+        // // compute shared pubkey and secretkey
+        let mut spk = keys[0].1.clone();
+        let mut ssk = keys[0].0.clone();
+        for i in 1..n-1 {
+            spk = s_combine_pubkeys(spk, keys[i].1.clone());
+            ssk = s_combine_secrets(ssk, keys[i].0.clone())
+        }
+        let message_digest = sha256(b"Hello, world!");
+        let ct = s_encrypt(23u64, r1, message_digest.clone(), spk);
+        let recovered_message = threshold_decrypt(r2, ct, ssk);
+        assert_eq!(message_digest, recovered_message);
+    }
+
+    #[test]
+    pub fn can_sign_and_verify_with_serialization() {
+        let message = b"test".as_slice();
+        let seed = 23u64;
+        let r1 = 123;
+        let r2 = 123123;
+        let parameters = s_signature_setup(seed, r1);
+        let poly = s_keygen(seed, 2);
+        let sk = s_calculate_secret(poly.clone());
+        let pk = s_calculate_pubkey(r1, r2, sk.clone());
+
+        let signature = s_sign(
+            seed, message.to_vec(), sk.clone(), parameters.clone());
+        let verify = s_verify(
+            seed, message.to_vec(), pk, signature, parameters.clone());
+        assert_eq!(true, verify);
+    }
+}

@@ -322,21 +322,17 @@ mod test {
     #[test]
     pub fn can_sign_and_verify() {
         let mut rng = ChaCha20Rng::seed_from_u64(23u64);
-        let r1 = 89430;
-        // let g1 = G1::generator();
         let message = b"test".as_slice();
 
         let parameters = schnorr::Schnorr::<G1, Blake2s>::setup::<_>(&mut rng).unwrap();
         let poly = keygen(2, rng.clone());
         let sk = calculate_secret(poly.clone());
         let pk = parameters.generator.mul(sk);
-        // let pk = calculate_pubkey(h1, h2, sk);
 
         let ssk = schnorr::SecretKey::<G1>(sk);
 
         let signature = sign(&message, ssk, parameters.clone(), &mut rng).unwrap();
         let verify = verify(&message, pk.into(), signature, parameters.clone(), &mut rng).unwrap();
         assert_eq!(true, verify);
- 
     }
 }
