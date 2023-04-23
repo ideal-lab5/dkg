@@ -24,7 +24,7 @@ use ark_crypto_primitives::{
     Error as CryptoPrimitivesError,
     signature::{
         schnorr,
-        schnorr::Signature,
+        schnorr::{Parameters, Signature},
         SignatureScheme,
     },
 };
@@ -100,9 +100,6 @@ pub fn calculate_shares_and_commitments(
         // don't calculate '0'th share because that's the secret
         let secret_share = poly.clone().evaluate(&<Fr>::from(k)); 
         // calculate commitment for the share
-        // c_0 * c_1 x * ... * c_t x^t = C_0 * ... * C_t * x^{t(t+1)/2}
-        // let x = (k as u64)^(t * (t+1) / 2) as u64;
-        // let commitment = c.mul(Fr::from(x));
         let commitment = g2.mul(secret_share);
         (secret_share, commitment) 
     }).collect::<Vec<_>>()
@@ -121,22 +118,39 @@ pub fn combine_secrets(sk1: Fr, sk2: Fr) -> Fr {
     sk1 + sk2
 }
 
+/// TODO: these should really be in their own file...
 /// signature with BLS12-381 secret 
 pub fn sign<R: Rng + Sized>(
     message: &[u8],
     sk: schnorr::SecretKey<G1>,
+    parameters: Parameters<G1, Blake2s>,
     mut rng: R,
 ) -> Result<Signature<G1>, CryptoPrimitivesError> {
     // let s: schnorr::SecretKey<G1> = schnorr::SecretKey(sk);
-    let parameters = schnorr::Schnorr::<G1, Blake2s>::setup::<_>(&mut rng).unwrap();
+    // let parameters = schnorr::Schnorr::<G1, Blake2s>::setup::<_>(&mut rng).unwrap();
     schnorr::Schnorr::<G1, Blake2s>::sign(
-        &parameters, &sk, &message, &mut rng
+        &parameters, 
+        &sk, 
+        &message, 
+        &mut rng,
     )
 }
 
-// pub fn generic_verify() {
-
-// }
+/// verify signature over BLS12-381
+pub fn verify<R: Rng + Sized>(
+    message: &[u8],
+    pk: schnorr::PublicKey<G1>,
+    signature: Signature<G1>,
+    parameters: Parameters<G1, Blake2s>,
+    mut rng: R,
+) -> Result<bool, CryptoPrimitivesError>  {
+    schnorr::Schnorr::<G1, Blake2s>::verify(
+        &parameters,
+        &pk,
+        &message,
+        &signature,
+    )
+}
 
 /// encrypts the message to a given public key
 pub fn encrypt<R: Rng + Sized>(
@@ -210,6 +224,27 @@ fn hash_to_g2(b: &[u8]) -> G2Affine {
     }
 }
 
+
+// TODO
+    // /// verify that the pairings inside the ciphertexts add up
+    // pub fn verify_ciphertext(&self, c: &TPKECipherText) -> bool {
+    //     let h = hash_h(c.u, &c.v);
+    //     let p1 = Bls12_381::pairing(self.g1, c.w);
+    //     let p2 = Bls12_381::pairing(c.u, h);
+    //     p1 == p2
+    // }
+
+    // /// verify that the shares given as parameter are valid
+    // pub fn verify_share(&self, i: usize, ui: G1, c: &TPKECipherText) -> bool {
+    //     if i > self.l.try_into().unwrap() {
+    //         return false;
+    //     }
+    //     let yi = self.vks[i];
+    //     let p1 = Bls12_381::pairing(ui, self.g2);
+    //     let p2 = Bls12_381::pairing(c.u, yi);
+    //     p1 == p2
+    // }
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -282,5 +317,26 @@ mod test {
         let ct = encrypt(m, h1, spk.g2, &mut rng.clone());
         let recovered = decrypt(ct.v, ct.u.mul(ssk), h2);
         assert_eq!(message_digest, recovered);
+    }
+
+    #[test]
+    pub fn can_sign_and_verify() {
+        let mut rng = ChaCha20Rng::seed_from_u64(23u64);
+        let r1 = 89430;
+        // let g1 = G1::generator();
+        let message = b"test".as_slice();
+
+        let parameters = schnorr::Schnorr::<G1, Blake2s>::setup::<_>(&mut rng).unwrap();
+        let poly = keygen(2, rng.clone());
+        let sk = calculate_secret(poly.clone());
+        let pk = parameters.generator.mul(sk);
+        // let pk = calculate_pubkey(h1, h2, sk);
+
+        let ssk = schnorr::SecretKey::<G1>(sk);
+
+        let signature = sign(&message, ssk, parameters.clone(), &mut rng).unwrap();
+        let verify = verify(&message, pk.into(), signature, parameters.clone(), &mut rng).unwrap();
+        assert_eq!(true, verify);
+ 
     }
 }
