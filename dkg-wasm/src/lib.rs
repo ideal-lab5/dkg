@@ -20,7 +20,7 @@ pub fn calculate_secret(be_poly: JsValue) -> Result<JsValue, serde_wasm_bindgen:
 }
 
 #[wasm_bindgen]
-pub fn w_calculate_pubkey(
+pub fn calculate_pubkey(
     r1: u64, 
     r2: u64, 
     secret: JsValue
@@ -32,17 +32,21 @@ pub fn w_calculate_pubkey(
 }
 
 #[wasm_bindgen]
-pub fn w_calculate_shares(
+pub fn calculate_shares_and_commitments(
     t: u8,
-    n: u8, 
+    n: u8,
+    r: u64,
     coeffs_blob: JsValue,
 ) -> Result<JsValue, serde_wasm_bindgen::Error> {
     let poly: BEPoly = serde_wasm_bindgen::from_value(coeffs_blob)?;
-    serde_wasm_bindgen::to_value(&ser::calculate_shares(t, n, poly.coeffs))
+    serde_wasm_bindgen::to_value(
+        &ser::calculate_shares_and_commitments(
+            t, n, r, poly,
+        ))
 }
 
 #[wasm_bindgen]
-pub fn w_verify_share(
+pub fn verify_share(
     r2: u64,
     share_bytes: Vec<u8>, // big endian bytes
     commitment_bytes: Vec<u8>, // serialize_compressed
@@ -51,7 +55,7 @@ pub fn w_verify_share(
 }
 
 #[wasm_bindgen]
-pub fn w_combine_pubkeys(
+pub fn combine_pubkeys(
     pk1: JsValue, 
     pk2: JsValue
 ) -> Result<JsValue, serde_wasm_bindgen::Error> {
@@ -64,17 +68,37 @@ pub fn w_combine_pubkeys(
 }
 
 #[wasm_bindgen]
-pub fn w_combine_secrets(s1: Vec<u8>, s2: Vec<u8>) -> Vec<u8> {
+pub fn combine_secrets(s1: Vec<u8>, s2: Vec<u8>) -> Vec<u8> {
     ser::combine_secrets(s1, s2)
 }
 
-// #[wasm_bindgen]
-// pub fn sign() {
-
-// }
+#[wasm_bindgen]
+pub fn sign(
+    seed: u64,
+    message: Vec<u8>,
+    secret_key: Vec<u8>,
+    r: u64,
+) -> Result<JsValue, serde_wasm_bindgen::Error> {
+    let params = ser::signature_setup(seed, r);
+    serde_wasm_bindgen::to_value(&ser::sign(seed, message, secret_key, params))
+}
 
 #[wasm_bindgen]
-pub fn w_encrypt(
+pub fn verify(
+    seed: u64,
+    message: Vec<u8>,
+    public_key: JsValue,
+    signature: JsValue,
+    r: u64,
+) -> Result<JsValue, serde_wasm_bindgen::Error> {
+    let params = ser::signature_setup(seed, r);
+    let pk: ser::SerializablePublicKey = serde_wasm_bindgen::from_value(public_key)?;
+    let sig: ser::SerializableSignature = serde_wasm_bindgen::from_value(signature)?;
+    serde_wasm_bindgen::to_value(&ser::verify(seed, message, pk, sig, params))
+}
+
+#[wasm_bindgen]
+pub fn encrypt(
     seed: u64, 
     r1: u64, 
     msg: Vec<u8>, 
@@ -85,7 +109,7 @@ pub fn w_encrypt(
 }
 
 #[wasm_bindgen]
-pub fn w_threshold_decrypt(
+pub fn threshold_decrypt(
     r2: u64,
     ciphertext_blob: JsValue, 
     sk: Vec<u8>
@@ -93,4 +117,17 @@ pub fn w_threshold_decrypt(
     let ciphertext: SerializableCiphertext = 
         serde_wasm_bindgen::from_value(ciphertext_blob)?;
     Ok(ser::threshold_decrypt(r2, ciphertext, sk))
+}
+
+/// Convert a slice of u8 to an array of u8 of size 32
+/// 
+/// * `slice`: The slize to convert
+/// 
+pub fn slice_to_array_32(slice: &[u8]) -> Option<&[u8; 32]> {
+    if slice.len() == 32 {
+        let ptr = slice.as_ptr() as *const [u8; 32];
+        unsafe {Some(&*ptr)}
+    } else {
+        None
+    }
 }

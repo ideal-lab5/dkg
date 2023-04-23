@@ -1,39 +1,47 @@
 import * as wasm from "dkg";
 
 export function keygen(seed, threshold) {
-    return wasm.w_keygen(BigInt(seed), threshold);
+    return wasm.keygen(BigInt(seed), threshold);
 }
 
 export function calculateSecret(poly) {
-    return wasm.w_calculate_secret(poly)
+    return wasm.calculate_secret(poly)
 }
 
 export function calculatePublicKey(r1, r2, secret) {
-    return wasm.w_calculate_pubkey(BigInt(r1), BigInt(r2), secret);
+    return wasm.calculate_pubkey(BigInt(r1), BigInt(r2), secret);
 }
 
-export function calculateShares(threshold, shares, coeffsBlob) {
-    return wasm.w_calculate_shares(threshold, shares, coeffsBlob);
+export function calculateShares(threshold, shares, r2, coeffsBlob) {
+    return wasm.calculate_shares_and_commitments(threshold, shares, BigInt(r2), coeffsBlob);
 }
 
 export function combinePubkeys(pk1, pk2) {
-    return wasm.w_combine_pubkeys(pk1, pk2);
+    return wasm.combine_pubkeys(pk1, pk2);
 }
 
 export function combineSecrets(s1, s2) {
-    return wasm.w_combine_secrets(s1, s2);
+    return wasm.combine_secrets(s1, s2);
 }
 
 export function verifyShare(r2, share, commitment) {
-    return wasm.w_verify_share(BigInt(r2), share, commitment);
+    return wasm.verify_share(BigInt(r2), share, commitment);
+}
+
+export function schnorrSign(seed, message, sk, r) {
+    return wasm.sign(BigInt(seed), message, sk, BigInt(r));
+}
+
+export function schnorrVerify(seed, message, pk, sig, r) {
+    return wasm.verify(BigInt(seed), message, pk, sig, BigInt(r));
 }
 
 export function thresholdEncrypt(seed, r1, message, pk) {
-    return wasm.w_encrypt(BigInt(seed), BigInt(r1), message, pk);
+    return wasm.encrypt(BigInt(seed), BigInt(r1), message, pk);
 }
 
 export function thresholdDecrypt(r2, ciphertextBlob, sk) {
-    return wasm.w_threshold_decrypt(BigInt(r2), ciphertextBlob, sk);
+    return wasm.threshold_decrypt(BigInt(r2), ciphertextBlob, sk);
 }
 
 // a very basic example
@@ -74,7 +82,7 @@ function dkgSimulation() {
         let pubkey = calculatePublicKey(r1, r2, secret)
         pubkeys.push(pubkey);
         // calculate shares
-        let sharesAndCommitments = calculateShares(t, n, rand_poly.coeffs);
+        let sharesAndCommitments = calculateShares(t, n, r2, rand_poly.coeffs);
         shares.push(sharesAndCommitments);
     });
 
@@ -107,5 +115,23 @@ function dkgSimulation() {
     console.log('original: ' + message);
 }
 
+function signaturesTest() {
+    let t = 2;
+    let r1 = 5661;
+    let r2 = 949490;
+    let seed = 231;
+    let message = new TextEncoder().encode("msg to sign");
+
+    let rand_poly = keygen(seed, t);
+    let secret = calculateSecret(rand_poly.coeffs);
+    let pubkey = calculatePublicKey(r1, r2, secret)
+
+    let sig = schnorrSign(seed, message, secret, r1);
+    let isValid = schnorrVerify(seed, message, pubkey, sig, r1);
+    console.log('isValid = ' + isValid);
+
+}
+
 dkgSimulation();
 // basicExample();
+// signaturesTest();

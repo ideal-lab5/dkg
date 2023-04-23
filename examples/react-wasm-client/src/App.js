@@ -1,8 +1,9 @@
 /* global BigInt */
 import './App.css';
-import { w_keygen, w_calculate_secret, 
-    w_calculate_pubkey, w_combine_pubkeys,
-    w_combine_secrets, w_encrypt, w_threshold_decrypt
+import { 
+  keygen, calculate_secret, 
+  calculate_pubkey, combine_pubkeys,
+  combine_secrets, encrypt, threshold_decrypt
 } from "dkg";
 import { useWasm } from './useWasm';
 import { useState } from 'react';
@@ -25,9 +26,9 @@ function App() {
     for (let i = 0; i < societySize; i++) {
       // generate random number 
       let r = 23;
-      let poly = w_keygen(BigInt(r), threshold);
-      let secret = w_calculate_secret(poly.coeffs);
-      let pubkey = w_calculate_pubkey(BigInt(r1), BigInt(r2), secret)
+      let poly = keygen(BigInt(r), threshold);
+      let secret = calculate_secret(poly.coeffs);
+      let pubkey = calculate_pubkey(BigInt(r1), BigInt(r2), secret)
       results.push({
         i: i,
         pubkey: pubkey,
@@ -38,11 +39,11 @@ function App() {
   }
 
   const calculateGroupPublicKey = () => {
-    return society.reduce((a, b) => w_combine_pubkeys(a.pubkey, b.pubkey));
+    return society.reduce((a, b) => combine_pubkeys(a.pubkey, b.pubkey));
   }
 
   const calculateGroupSecretKey = () => {
-    return society.reduce((a, b) => w_combine_secrets(a.secret, b.secret));
+    return society.reduce((a, b) => combine_secrets(a.secret, b.secret));
   }
 
 

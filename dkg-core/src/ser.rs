@@ -126,35 +126,34 @@ pub struct SerializableParameters {
     pub salt: [u8;32],
 }
 
-pub fn s_keygen(seed: u64, threshold: u8) -> BEPoly {
+pub fn keygen(seed: u64, threshold: u8) -> BEPoly {
     let rng = ChaCha20Rng::seed_from_u64(seed);
     let poly = dkg::keygen(threshold as usize, rng);
     BEPoly::new(poly)
 }
 
-pub fn s_calculate_secret(be_poly: BEPoly) -> Vec<u8> {
+pub fn calculate_secret(be_poly: BEPoly) -> Vec<u8> {
     let f = DensePolynomial::<Fr>::from_coefficients_vec(be_poly.coeffs);
     let secret: Fr = dkg::calculate_secret(f);
     let big_secret: num_bigint::BigUint = secret.into();
     big_secret.to_bytes_be()
 }
 
-pub fn s_calculate_shares(
+pub fn calculate_shares_and_commitments(
     t: u8, 
     n: u8, 
-    coeffs: Vec<Fr>,
+    r2: u64,
+    poly: BEPoly,
 ) -> Vec<Share> {
-    let h2 = G2::generator();
-    let f = DensePolynomial::<Fr>::from_coefficients_vec(coeffs);
+    let h2 = G2::generator().mul(Fr::from(r2));
+    let f = DensePolynomial::<Fr>::from_coefficients_vec(poly.coeffs);
     let shares: Vec<(Fr, G2)> = dkg::calculate_shares_and_commitments(t, n, h2, f);
     let serializable_shares: Vec<Share> = shares.iter().map(|(s, c)| {
         let big_s: num_bigint::BigUint = Fr::into(*s);
-        let bytes_be_s = big_s.to_bytes_be();
-        // TODO: get proper vec size, that one is way too big
-        let mut commitments_bytes = Vec::with_capacity(1000);
+        let mut commitments_bytes = Vec::new();
         c.serialize_compressed(&mut commitments_bytes).unwrap();
         Share {
-            share: bytes_be_s, 
+            share: big_s.to_bytes_be(), 
             commitment: commitments_bytes,
         }
     }).collect::<Vec<_>>();
@@ -163,7 +162,7 @@ pub fn s_calculate_shares(
 
 /// calculate the public key in G1 and G2 for a given secret
 /// the secret should be encoded as big endian
-pub fn s_calculate_pubkey(
+pub fn calculate_pubkey(
     r1: u64, 
     r2: u64, 
     secret_be: Vec<u8>,
@@ -189,7 +188,7 @@ pub fn s_calculate_pubkey(
 }
 
 /// will give the master pubkey in G2 only
-pub fn s_combine_pubkeys(
+pub fn combine_pubkeys(
     pk1: SerializablePublicKey,
     pk2: SerializablePublicKey
 ) -> SerializablePublicKey {
@@ -216,7 +215,7 @@ pub fn s_combine_pubkeys(
     }
 }
 
-pub fn s_verify_share(
+pub fn verify_share(
     r2: u64,
     share_be: Vec<u8>, 
     raw_commitment: Vec<u8>,
@@ -232,7 +231,7 @@ pub fn s_verify_share(
     dkg::verify_share(g2, share, commitment)
 }
 
-pub fn s_combine_secrets(
+pub fn combine_secrets(
     s1: Vec<u8>, s2: Vec<u8>
 ) -> Vec<u8> {
     // each secret is encoded as big endian
@@ -246,7 +245,8 @@ pub fn s_combine_secrets(
     big_x.to_bytes_be()
 }
 
-pub fn s_signature_setup(
+// needed??
+pub fn signature_setup(
     seed: u64,
     r1: u64,
 ) -> SerializableParameters {
@@ -263,7 +263,7 @@ pub fn s_signature_setup(
     }
 }
 
-pub fn s_sign(
+pub fn sign(
     seed: u64,
     message: Vec<u8>,
     secret_key: Vec<u8>,
@@ -290,7 +290,7 @@ pub fn s_sign(
     }
 }
 
-pub fn s_verify(
+pub fn verify(
     seed: u64,
     message: Vec<u8>,
     public_key: SerializablePublicKey,
@@ -318,7 +318,7 @@ pub fn s_verify(
     dkg::verify(&message, pk.into(), sig, params, &mut rng).unwrap()
 }
 
-pub fn s_encrypt(
+pub fn encrypt(
     seed: u64, 
     r1: u64, 
     msg: Vec<u8>, 
@@ -366,10 +366,6 @@ pub fn slice_to_array_32(slice: &[u8]) -> Option<&[u8; 32]> {
     }
 }
 
-// use rand_chacha::{
-// 	ChaCha20Rng,
-// 	rand_core::SeedableRng,
-// };
 #[cfg(test)]
 pub mod test {
     use super::*;
@@ -392,23 +388,41 @@ pub mod test {
         let seed = 23u64;
 
         let mut keys: Vec<(Vec<u8>, SerializablePublicKey)> = Vec::new();
+        // (share, commitment)
+        let mut shares: Vec<Vec<(Vec<u8>, Vec<u8>)>> = Vec::new();
         for i in 1..n {
             // keygen: Q: how can we verify this was serialized properly when randomly generated?
-            let be_poly = s_keygen(seed, t);
+            let be_poly = keygen(seed, t);
             // calculate secret
-            let secret = s_calculate_secret(be_poly.clone());        
-            let pubkey = s_calculate_pubkey(r1, r2, secret.clone());
+            let secret = calculate_secret(be_poly.clone());        
+            let pubkey = calculate_pubkey(r1, r2, secret.clone());
+            let shares_and_commitments: Vec<Share> = calculate_shares_and_commitments(
+                t, n, be_poly,
+            );
+            shares.push(shares_and_commitments);
             keys.push((secret.clone(), pubkey.clone()));
         }
-        // // compute shared pubkey and secretkey
+
+        // now simulate verification of shares
+        for i in 0..n-1 {
+            for k in 0..n-1 {
+                let share = shares[i as usize]
+                    [k as usize].0;
+                let commitment = shares[i as usize][k as usize].1;
+                let verify = verify_share(r2, share, commitment);
+                assert_eq!(true, verify);
+            }
+        }
+
+        // compute shared pubkey and secretkey
         let mut spk = keys[0].1.clone();
         let mut ssk = keys[0].0.clone();
         for i in 1..n-1 {
-            spk = s_combine_pubkeys(spk, keys[i].1.clone());
-            ssk = s_combine_secrets(ssk, keys[i].0.clone())
+            spk = combine_pubkeys(spk, keys[i].1.clone());
+            ssk = combine_secrets(ssk, keys[i].0.clone())
         }
         let message_digest = sha256(b"Hello, world!");
-        let ct = s_encrypt(23u64, r1, message_digest.clone(), spk);
+        let ct = encrypt(23u64, r1, message_digest.clone(), spk);
         let recovered_message = threshold_decrypt(r2, ct, ssk);
         assert_eq!(message_digest, recovered_message);
     }
@@ -419,14 +433,14 @@ pub mod test {
         let seed = 23u64;
         let r1 = 123;
         let r2 = 123123;
-        let parameters = s_signature_setup(seed, r1);
-        let poly = s_keygen(seed, 2);
-        let sk = s_calculate_secret(poly.clone());
-        let pk = s_calculate_pubkey(r1, r2, sk.clone());
+        let parameters = signature_setup(seed, r1);
+        let poly = keygen(seed, 2);
+        let sk = calculate_secret(poly.clone());
+        let pk = calculate_pubkey(r1, r2, sk.clone());
 
-        let signature = s_sign(
+        let signature = sign(
             seed, message.to_vec(), sk.clone(), parameters.clone());
-        let verify = s_verify(
+        let verify = verify(
             seed, message.to_vec(), pk, signature, parameters.clone());
         assert_eq!(true, verify);
     }
