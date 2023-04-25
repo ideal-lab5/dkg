@@ -80,6 +80,25 @@ pub fn verify_share(
     verify.eq(&commitment)
 }
 
+// // el gamal
+// pub fn encrypt_share(
+//     share: Fr,
+//     g: G1,
+//     pubkey: G1,
+//     r: Fr,
+// ) -> G2 {
+//     let s = pubkey.mul(r).into();
+//     let c1 = g1.mul(r).into();
+//     let c2 = share 
+// }
+
+// pub fn decrypt_share(
+//     encrypted_share: G2,
+//     secret_key: Fr,
+// ) -> Fr {
+
+// }
+
 /// calculate shares and commitments {(f(i), g2^f(i))} for i in [n]
 ///
 /// * `n`: The number of shares to calculate
@@ -197,13 +216,49 @@ pub fn decrypt(
     ret
 }
 
+/// verify that the pairings inside the ciphertexts add up
+/// 
+/// h should be the hash of u and v, hash_h(u, &v)
+/// doing this since we need to be able to verify
+/// but we dont' want to pass in things of arbitrary length 
+pub fn verify_ciphertext(
+    g1: G1,
+    u: G1, 
+    h: G2,
+    w: G2,
+) -> bool {
+    // TODO: need to be able to do this hashing offchain
+    // let h = hash_h(u, &v);
+    let p1 = Bls12_381::pairing(g1, w);
+    let p2 = Bls12_381::pairing(u, h);
+    p1 == p2
+}
+
+// /// verify that the shares given as parameter are valid
+// pub fn verify_share(&self, 
+//     i: usize, 
+//     ui: G1,
+//     g2: G2,
+//     u: G1, 
+//     v: Vec<u8>, 
+//     w: G2,
+// ) -> bool {
+//     if i > self.l.try_into().unwrap() {
+//         return false;
+//     }
+//     let yi = self.vks[i];
+//     let p1 = Bls12_381::pairing(ui, g2);
+//     let p2 = Bls12_381::pairing(u, yi);
+//     p1 == p2
+// }
+
 fn sha256(b: &[u8]) -> Vec<u8> {
     let mut hasher = sha2::Sha256::new();
     hasher.update(b);
     hasher.finalize().to_vec()
 }
 
-fn hash_h(g: G1, x: &[u8]) -> G2 {
+pub fn hash_h(g: G1, x: &[u8]) -> G2 {
     let mut serialized = Vec::new();
     g.serialize_compressed(&mut serialized).unwrap();
     serialized.extend_from_slice(x);
@@ -224,16 +279,7 @@ fn hash_to_g2(b: &[u8]) -> G2Affine {
     }
 }
 
-
 // TODO
-    // /// verify that the pairings inside the ciphertexts add up
-    // pub fn verify_ciphertext(&self, c: &TPKECipherText) -> bool {
-    //     let h = hash_h(c.u, &c.v);
-    //     let p1 = Bls12_381::pairing(self.g1, c.w);
-    //     let p2 = Bls12_381::pairing(c.u, h);
-    //     p1 == p2
-    // }
-
     // /// verify that the shares given as parameter are valid
     // pub fn verify_share(&self, i: usize, ui: G1, c: &TPKECipherText) -> bool {
     //     if i > self.l.try_into().unwrap() {

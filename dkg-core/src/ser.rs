@@ -342,7 +342,11 @@ pub fn encrypt(
 }
 
 /// sk is encoded as big endian
-pub fn threshold_decrypt(r2: u64, ciphertext: SerializableCiphertext, sk: Vec<u8>) -> Vec<u8> {
+pub fn threshold_decrypt(
+    r2: u64, 
+    ciphertext: SerializableCiphertext, 
+    sk: Vec<u8>,
+) -> Vec<u8> {
     let h2 = G2::generator().mul(Fr::from(r2));
     let big_sk = num_bigint::BigUint::from_bytes_be(&sk);
     let x = Fr::from(big_sk);
@@ -351,6 +355,31 @@ pub fn threshold_decrypt(r2: u64, ciphertext: SerializableCiphertext, sk: Vec<u8
     let decryption_key = u.mul(x);
     let recovered_message = dkg::decrypt(ciphertext.v, decryption_key, h2);
     recovered_message.to_vec()
+}
+
+pub fn verify_ciphertext(
+    g1: Vec<u8>, // g1
+    u: Vec<u8>, // g1
+    h: Vec<u8>, // g2
+    w: Vec<u8>, // g2
+) -> bool {
+    let g1G1 = G1::deserialize_compressed(&g1[..]).unwrap();
+    let uG1 = G1::deserialize_compressed(&u[..]).unwrap();
+    let hG2 = G2::deserialize_compressed(&h[..]).unwrap();
+    let wG2 = G2::deserialize_compressed(&w[..]).unwrap();
+    dkg::verify_ciphertext(g1G1, uG1, hG2, wG2)
+}
+
+// hash from G1 to G2
+pub fn hash_h(
+    r1: u64, 
+    x: &[u8],
+) -> Vec<u8> {
+    let g1 = G1::generator().mul(Fr::from(r1));
+    let g2 = dkg::hash_h(g1, x);
+    let mut out_bytes = Vec::new();
+    g2.serialize_compressed(&mut out_bytes).unwrap();
+    out_bytes
 }
 
 /// Convert a slice of u8 to an array of u8 of size 32

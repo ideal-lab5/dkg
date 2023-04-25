@@ -73,6 +73,14 @@ pub fn combine_secrets(s1: Vec<u8>, s2: Vec<u8>) -> Vec<u8> {
 }
 
 #[wasm_bindgen]
+pub fn hash_h(
+    r1: u64,
+    x: Vec<u8>,
+) -> Vec<u8> {
+    ser::hash_h(r1, &x)
+}
+
+#[wasm_bindgen]
 pub fn sign(
     seed: u64,
     message: Vec<u8>,
@@ -117,6 +125,16 @@ pub fn threshold_decrypt(
     let ciphertext: SerializableCiphertext = 
         serde_wasm_bindgen::from_value(ciphertext_blob)?;
     Ok(ser::threshold_decrypt(r2, ciphertext, sk))
+}
+
+#[wasm_bindgen]
+pub fn verify_ciphertext(
+    g1: Vec<u8>, // g1
+    u: Vec<u8>, // g1
+    h: Vec<u8>, // g2
+    w: Vec<u8>, // g2
+) -> bool {
+    ser::verify_ciphertext(g1, u, h, w)
 }
 
 /// Convert a slice of u8 to an array of u8 of size 32
