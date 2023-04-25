@@ -5,13 +5,9 @@ use ark_bls12_381::{
 
 #[cfg(not(feature = "std"))]
 use ark_std::vec::Vec;
-// #[cfg(not(feature = "std"))]
-// use codec::{Serialize, Deserialize};
 
 #[cfg(feature = "std")]
 use std::vec::Vec;
-// #[cfg(feature = "std")]
-// use serde::{Serialize, Deserialize};
 
 /// Represents a public key in both G1 and G2
 // // #[derive(Serialize)]

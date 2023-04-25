@@ -2,6 +2,7 @@
 //! Serializable wrappers for DKG functions
 //!
 use crate::dkg;
+use crate::types::*;
 use ark_ec::Group;
 use ark_bls12_381::{
     Fr,
@@ -36,7 +37,13 @@ use ark_std::{
     ops::Mul,
     rand::RngCore,
 };
-use crate::types::*;
+
+#[cfg(not(feature = "std"))]
+use ark_std::vec::Vec;
+
+#[cfg(feature = "std")]
+use std::vec::Vec;
+
 
 
 /// a serializable wrapper to represent polynomial coefficiants in the field Fr
