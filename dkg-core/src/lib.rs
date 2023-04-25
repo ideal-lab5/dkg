@@ -16,5 +16,5 @@ pub mod dkg;
 
 pub mod types;
 
-#[cfg(feature = "std")]
+// #[cfg(feature = "std")]
 pub mod ser;
