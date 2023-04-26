@@ -224,11 +224,11 @@ pub fn decrypt(
 pub fn verify_ciphertext(
     g1: G1,
     u: G1, 
-    h: G2,
+    v: Vec<u8>,
     w: G2,
 ) -> bool {
     // TODO: need to be able to do this hashing offchain
-    // let h = hash_h(u, &v);
+    let h = hash_h(u, &v);
     let p1 = Bls12_381::pairing(g1, w);
     let p2 = Bls12_381::pairing(u, h);
     p1 == p2
