@@ -110,10 +110,11 @@ pub fn encrypt(
     seed: u64, 
     r1: u64, 
     msg: Vec<u8>, 
-    pk: JsValue
+    pk_g2: Vec<u8>
 ) -> Result<JsValue, serde_wasm_bindgen::Error> {
-    let wpk: SerializablePublicKey = serde_wasm_bindgen::from_value(pk)?;
-    serde_wasm_bindgen::to_value(&ser::encrypt(seed, r1, msg, wpk))
+    // ser::encrypt(seed, r1, msg, pk_g2);
+    // let wpk: SerializablePublicKey = serde_wasm_bindgen::from_value(pk)?;
+    serde_wasm_bindgen::to_value(&ser::encrypt(seed, r1, msg, pk_g2))
 }
 
 #[wasm_bindgen]

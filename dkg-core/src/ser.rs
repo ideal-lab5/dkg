@@ -323,12 +323,12 @@ pub fn encrypt(
     seed: u64, 
     r1: u64, 
     msg: Vec<u8>, 
-    pk: SerializablePublicKey
+    pk_g2: Vec<u8>,
 ) -> SerializableCiphertext {
     let mut rng = ChaCha20Rng::seed_from_u64(seed);
     let h1 = G1::generator().mul(Fr::from(r1));
     // let wpk: SerializablePublicKey = serde_wasm_bindgen::from_value(pk).unwrap();
-    let gpk = G2::deserialize_compressed(&pk.g2[..]).unwrap();
+    let gpk = G2::deserialize_compressed(&pk_g2[..]).unwrap();
     let m = slice_to_array_32(&msg).unwrap();
     let out = dkg::encrypt(m, h1, gpk, &mut rng);
     let mut u_bytes = Vec::new();
@@ -406,55 +406,54 @@ pub mod test {
         hasher.finalize().to_vec()
     }
 
-    // #[test]
-    // pub fn test_dkg_tss_with_serialization() {
-    //     let t = 2;
-    //     let n = 3;
-    //     let g1 = G1::generator();
-    //     let g2 = G2::generator();
-    //     let r1 = 89430;
-    //     let r2 = 110458345;
-    //     let seed = 23u64;
+    #[test]
+    pub fn test_dkg_tss_with_serialization() {
+        let t = 2;
+        let n = 3;
+        let g1 = G1::generator();
+        let g2 = G2::generator();
+        let r1 = 89430;
+        let r2 = 110458345;
+        let seed = 23u64;
 
-    //     let mut keys: Vec<(Vec<u8>, SerializablePublicKey)> = Vec::new();
-    //     // (share, commitment)
-    //     let mut shares: Vec<Vec<Share>> = Vec::new();
-    //     for i in 1..n {
-    //         // keygen: Q: how can we verify this was serialized properly when randomly generated?
-    //         let be_poly = keygen(seed, t);
-    //         // calculate secret
-    //         let secret = calculate_secret(be_poly.clone());        
-    //         let pubkey = calculate_pubkey(r1, r2, secret.clone());
-    //         let shares_and_commitments: Vec<Share> = calculate_shares_and_commitments(
-    //             t, n, r1, be_poly,
-    //         );
-    //         shares.push(shares_and_commitments);
-    //         keys.push((secret.clone(), pubkey.clone()));
-    //     }
+        let mut keys: Vec<(Vec<u8>, SerializablePublicKey)> = Vec::new();
+        // (share, commitment)
+        let mut shares: Vec<Vec<Share>> = Vec::new();
+        for i in 1..n {
+            // keygen: Q: how can we verify this was serialized properly when randomly generated?
+            let be_poly = keygen(seed, t);
+            // calculate secret
+            let secret = calculate_secret(be_poly.clone());        
+            let pubkey = calculate_pubkey(r1, r2, secret.clone());
+            let shares_and_commitments: Vec<Share> = calculate_shares_and_commitments(
+                t, n, r2, be_poly,
+            );
+            shares.push(shares_and_commitments);
+            keys.push((secret.clone(), pubkey.clone()));
+        }
 
-    //     // now simulate verification of shares
-    //     for i in 0..n-1 {
-    //         for k in 0..n-1 {
-    //             let share = shares[i as usize]
-    //                 [k as usize].clone().share;
-    //             let commitment = shares[i as usize][k as usize].clone().commitment;
-    //             let verify = verify_share(r2, share, commitment);
-    //             assert_eq!(true, verify);
-    //         }
-    //     }
+        // now simulate verification of shares
+        for i in 0..n-1 {
+            for k in 0..n-1 {
+                let share = shares[i as usize][k as usize].clone().share;
+                let commitment = shares[i as usize][k as usize].clone().commitment;
+                let verify = verify_share(r2, share, commitment);
+                assert_eq!(true, verify);
+            }
+        }
 
-    //     // compute shared pubkey and secretkey
-    //     let mut spk = keys[0].1.clone();
-    //     let mut ssk = keys[0].0.clone();
-    //     for i in 1..n-1 {
-    //         spk = combine_pubkeys(spk, keys[i as usize].1.clone());
-    //         ssk = combine_secrets(ssk, keys[i as usize].0.clone())
-    //     }
-    //     let message_digest = sha256(b"Hello, world!");
-    //     let ct = encrypt(23u64, r1, message_digest.clone(), spk);
-    //     let recovered_message = threshold_decrypt(r2, ct, ssk);
-    //     assert_eq!(message_digest, recovered_message);
-    // }
+        // compute shared pubkey and secretkey
+        let mut spk = keys[0].1.clone();
+        let mut ssk = keys[0].0.clone();
+        for i in 1..n-1 {
+            spk = combine_pubkeys(spk, keys[i as usize].1.clone());
+            ssk = combine_secrets(ssk, keys[i as usize].0.clone())
+        }
+        let message_digest = sha256(b"Hello, world!");
+        let ct = encrypt(23u64, r1, message_digest.clone(), spk.g2);
+        let recovered_message = threshold_decrypt(r2, ct, ssk);
+        assert_eq!(message_digest, recovered_message);
+    }
 
     #[test]
     pub fn can_sign_and_verify_with_serialization() {

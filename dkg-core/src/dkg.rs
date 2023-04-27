@@ -342,8 +342,7 @@ mod test {
         // now simulate verification of shares
         for i in 0..n-1 {
             for k in 0..n-1 {
-                let share = shares[i as usize]
-                    [k as usize].0;
+                let share = shares[i as usize][k as usize].0;
                 let commitment = shares[i as usize][k as usize].1;
                 let verify = verify_share(g2, share, commitment);
                 assert_eq!(true, verify);
