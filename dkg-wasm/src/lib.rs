@@ -35,13 +35,13 @@ pub fn calculate_pubkey(
 pub fn calculate_shares_and_commitments(
     t: u8,
     n: u8,
-    r: u64,
+    r2: u64,
     coeffs_blob: JsValue,
 ) -> Result<JsValue, serde_wasm_bindgen::Error> {
     let poly: BEPoly = serde_wasm_bindgen::from_value(coeffs_blob)?;
     serde_wasm_bindgen::to_value(
         &ser::calculate_shares_and_commitments(
-            t, n, r, poly,
+            t, n, r2, poly,
         ))
 }
 

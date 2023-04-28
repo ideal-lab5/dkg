@@ -451,7 +451,7 @@ pub mod test {
         }
         let message_digest = sha256(b"Hello, world!");
         let ct = encrypt(23u64, r1, message_digest.clone(), spk.g2);
-        let recovered_message = threshold_decrypt(r2, ct, ssk);
+        let recovered_message = threshold_decrypt(r2, ct.v, ct.u, ssk);
         assert_eq!(message_digest, recovered_message);
     }
 
