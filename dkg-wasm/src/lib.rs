@@ -112,20 +112,18 @@ pub fn encrypt(
     msg: Vec<u8>, 
     pk_g2: Vec<u8>
 ) -> Result<JsValue, serde_wasm_bindgen::Error> {
-    // ser::encrypt(seed, r1, msg, pk_g2);
-    // let wpk: SerializablePublicKey = serde_wasm_bindgen::from_value(pk)?;
-    serde_wasm_bindgen::to_value(&ser::encrypt(seed, r1, msg, pk_g2))
+    let ct = ser::encrypt(seed, r1, msg, pk_g2);
+    serde_wasm_bindgen::to_value(&ct)
 }
 
 #[wasm_bindgen]
 pub fn threshold_decrypt(
     r2: u64,
-    ciphertext_blob: JsValue, 
+    ciphertext: Vec<u8>,
+    u: Vec<u8>,
     sk: Vec<u8>
 ) -> Result<Vec<u8>, serde_wasm_bindgen::Error> {
-    let ciphertext: SerializableCiphertext = 
-        serde_wasm_bindgen::from_value(ciphertext_blob)?;
-    Ok(ser::threshold_decrypt(r2, ciphertext, sk))
+    Ok(ser::threshold_decrypt(r2, ciphertext, u, sk))
 }
 
 #[wasm_bindgen]

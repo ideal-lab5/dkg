@@ -327,38 +327,38 @@ pub fn encrypt(
 ) -> SerializableCiphertext {
     let mut rng = ChaCha20Rng::seed_from_u64(seed);
     let h1 = G1::generator().mul(Fr::from(r1));
-    // let wpk: SerializablePublicKey = serde_wasm_bindgen::from_value(pk).unwrap();
     let gpk = G2::deserialize_compressed(&pk_g2[..]).unwrap();
     let m = slice_to_array_32(&msg).unwrap();
     let out = dkg::encrypt(m, h1, gpk, &mut rng);
     let mut u_bytes = Vec::new();
-    let mut v_bytes = Vec::new();
+    let mut w_bytes = Vec::new();
     out.u.serialize_compressed(&mut u_bytes).unwrap();
-    out.v.serialize_compressed(&mut v_bytes).unwrap();
+    out.w.serialize_compressed(&mut w_bytes).unwrap();
     SerializableCiphertext{
         u: u_bytes,
         v: out.v,
-        w: v_bytes,
+        w: w_bytes,
     }
 }
 
 /// sk is encoded as big endian
 pub fn threshold_decrypt(
     r2: u64, 
-    ciphertext: SerializableCiphertext, 
+    ciphertext: Vec<u8>,
+    u: Vec<u8>,
     sk: Vec<u8>,
 ) -> Vec<u8> {
     let h2 = G2::generator().mul(Fr::from(r2));
     let big_sk = num_bigint::BigUint::from_bytes_be(&sk);
     let x = Fr::from(big_sk);
     // convert c.u to group element
-    let u = G1::deserialize_compressed(&ciphertext.u[..]).unwrap();
+    let u = G1::deserialize_compressed(&u[..]).unwrap();
     let decryption_key = u.mul(x);
-    let recovered_message = dkg::decrypt(ciphertext.v, decryption_key, h2);
+    let recovered_message = dkg::decrypt(ciphertext, decryption_key, h2);
     recovered_message.to_vec()
 }
 
-pub fn verify_ciphertext(
+pub fn verify_ciphertext(   
     g1: Vec<u8>, // g1
     u: Vec<u8>, // g1
     v: Vec<u8>, 
